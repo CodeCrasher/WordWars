@@ -12,7 +12,7 @@
       --text: #f4f7fb;
       --muted: #aeb8c8;
       --line: #313847;
-      --accent: #39d98a;
+      --accent: #ff6b35;
       --accent-2: #77a7ff;
       --danger: #ff5d6c;
       --warn: #f4c430;
@@ -23,6 +23,10 @@
       --tile: #11151d;
     }
 
+    [data-theme] {
+      color: var(--text);
+    }
+
     [data-theme="light"] {
       --bg: #f6f8fb;
       --panel: #ffffff;
@@ -30,7 +34,7 @@
       --text: #171b23;
       --muted: #526070;
       --line: #d8e0eb;
-      --accent: #178f5a;
+      --accent: #d94f1a;
       --accent-2: #315fca;
       --danger: #c93446;
       --warn: #b87800;
@@ -50,7 +54,10 @@
       min-height: 100vh;
       background:
         radial-gradient(circle at top left, rgba(119, 167, 255, 0.18), transparent 34rem),
+        radial-gradient(circle at bottom right, rgba(255, 107, 53, 0.10), transparent 30rem),
         linear-gradient(140deg, var(--bg), var(--bg));
+      background-size: 200% 200%;
+      animation: bgDrift 12s ease infinite alternate;
       color: var(--text);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       letter-spacing: 0;
@@ -85,7 +92,9 @@
       align-items: center;
       justify-content: space-between;
       gap: 16px;
-      margin-bottom: 28px;
+      margin-bottom: 36px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 20px;
     }
 
     .brand {
@@ -100,11 +109,11 @@
       place-items: center;
       width: 42px;
       height: 42px;
-      border-radius: 8px;
+      border-radius: 12px;
       background: var(--accent);
-      color: #06110b;
+      color: #1a0800;
       font-weight: 900;
-      box-shadow: 0 12px 30px var(--shadow);
+      box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 30%, transparent);
       flex: 0 0 auto;
     }
 
@@ -116,7 +125,7 @@
     }
 
     h1 {
-      font-size: clamp(1.4rem, 3vw, 2.2rem);
+      font-size: clamp(1.6rem, 3vw, 2.4rem);
       line-height: 1.1;
     }
 
@@ -146,19 +155,32 @@
 
     .home {
       min-height: calc(100vh - 150px);
-      display: grid;
-      place-items: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px 0;
     }
 
     .home-panel {
       width: min(560px, 100%);
       display: grid;
       gap: 18px;
-      padding: 30px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      padding: 36px;
+      border: 1px solid color-mix(in srgb, var(--accent-2) 30%, transparent);
+      border-radius: 16px;
       background: color-mix(in srgb, var(--panel) 94%, transparent);
-      box-shadow: 0 22px 70px var(--shadow);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent), 0 28px 80px var(--shadow);
+    }
+
+    .home-panel::before {
+      content: "";
+      display: block;
+      height: 3px;
+      width: 60px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      border-radius: 999px;
     }
 
     .home-actions {
@@ -190,7 +212,7 @@
     .btn.primary {
       background: var(--accent);
       border-color: var(--accent);
-      color: #06110b;
+      color: #1a0800;
       font-weight: 800;
     }
 
@@ -571,7 +593,7 @@
       padding: 14px 20px;
       border-radius: 8px;
       background: var(--accent);
-      color: #06110b;
+      color: #1a0800;
       font-weight: 950;
       box-shadow: 0 18px 45px var(--shadow);
     }
@@ -591,6 +613,216 @@
         transform: translateY(0);
         opacity: 1;
       }
+    }
+
+    @keyframes bgDrift {
+      from { background-position: 0% 0%; }
+      to { background-position: 100% 100%; }
+    }
+
+    body:has([data-theme="light"]) {
+      background:
+        radial-gradient(circle at top left, rgba(255, 107, 53, 0.10), transparent 34rem),
+        radial-gradient(circle at bottom right, rgba(119, 167, 255, 0.08), transparent 30rem),
+        linear-gradient(140deg, #f6f8fb, #edf2f8);
+      background-size: 200% 200%;
+      animation: bgDrift 12s ease infinite alternate;
+    }
+
+    @keyframes fadeUp {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.04); }
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.2; }
+    }
+
+    .home-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+    }
+
+    .hero-block {
+      text-align: center;
+      margin-bottom: 32px;
+      animation: fadeUp 400ms ease-out 0ms both;
+    }
+
+    .hero-logo {
+      display: grid;
+      place-items: center;
+      width: 64px;
+      height: 64px;
+      border-radius: 12px;
+      background: var(--accent);
+      color: #1a0800;
+      font-weight: 900;
+      font-size: 1.8rem;
+      box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 30%, transparent);
+      margin: 0 auto 16px;
+      animation: pulse 3s ease infinite;
+    }
+
+    .hero-title {
+      font-size: clamp(2rem, 5vw, 3.2rem);
+      font-weight: 900;
+      line-height: 1.1;
+      margin-bottom: 8px;
+    }
+
+    .hero-sub {
+      color: var(--muted);
+      font-size: 1rem;
+      letter-spacing: 0.04em;
+      margin-bottom: 20px;
+    }
+
+    .feature-pills {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .feature-pill {
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 14px;
+      font-size: 0.82rem;
+      color: var(--muted);
+      animation: fadeUp 400ms ease-out both;
+    }
+
+    .feature-pill:nth-child(1) { animation-delay: 50ms; }
+    .feature-pill:nth-child(2) { animation-delay: 100ms; }
+    .feature-pill:nth-child(3) { animation-delay: 150ms; }
+
+    .live-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: blink 1.4s ease infinite;
+      flex-shrink: 0;
+    }
+
+    #showCreate {
+      height: 52px;
+      background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, var(--accent-2)));
+      border-color: transparent;
+      color: #1a0800;
+      font-weight: 800;
+      box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 35%, transparent);
+    }
+
+    #showCreate:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 32px color-mix(in srgb, var(--accent) 50%, transparent);
+      border-color: transparent;
+    }
+
+    #showJoin {
+      height: 52px;
+      background: transparent;
+      border: 1px solid var(--accent-2);
+      color: var(--accent-2);
+    }
+
+    #showJoin:hover {
+      background: color-mix(in srgb, var(--accent-2) 10%, transparent);
+      transform: translateY(-2px);
+      border-color: var(--accent-2);
+    }
+
+    .how-it-works {
+      border-top: 1px solid var(--line);
+      padding-top: 4px;
+    }
+
+    .how-it-works summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 0.85rem;
+      padding: 8px 0;
+      list-style: none;
+      user-select: none;
+    }
+
+    .how-it-works summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .how-it-works summary::before {
+      content: "▸ ";
+      display: inline-block;
+      transition: transform 200ms ease;
+    }
+
+    .how-it-works[open] summary::before {
+      transform: rotate(90deg);
+    }
+
+    .how-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 10px 0 4px;
+    }
+
+    .how-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .step-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #1a0800;
+      font-weight: 900;
+      font-size: 0.82rem;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+    }
+
+    .step-text {
+      color: var(--muted);
+      font-size: 0.88rem;
+      padding-top: 5px;
+      line-height: 1.4;
+    }
+
+    .home-panel {
+      animation: fadeUp 400ms ease-out 100ms both;
+    }
+
+    .home-footer {
+      text-align: center;
+      margin-top: 40px;
+      color: var(--muted);
+      font-size: 0.8rem;
+      opacity: 0.6;
     }
 
     @media (max-width: 860px) {
@@ -618,7 +850,7 @@
   </style>
 </head>
 <body>
-  <div class="app" id="app" data-theme="dark">
+  <div class="app" id="app" data-theme="light">
     <header class="topbar">
       <div class="brand">
         <div class="logo">W</div>
@@ -632,15 +864,47 @@
 
     <main>
       <section class="screen home active" id="homeScreen">
-        <div class="home-panel">
-          <div>
-            <h2>Start a match</h2>
-            <p class="subtitle">Create a host-controlled room or join one with a 6-character code.</p>
+        <div class="home-content">
+          <div class="hero-block">
+            <div class="hero-logo">W</div>
+            <p class="hero-title">DIY Wordle Arena</p>
+            <p class="hero-sub">Host-controlled • Competitive • Real-time</p>
+            <div class="feature-pills">
+              <span class="feature-pill">⚡ Fastest finger wins</span>
+              <span class="feature-pill">🎯 Host picks the word</span>
+              <span class="feature-pill">🏆 Live leaderboard</span>
+            </div>
           </div>
-          <div class="home-actions">
-            <button class="btn primary" id="showCreate">Create Room</button>
-            <button class="btn" id="showJoin">Join Room</button>
-          </div>
+          <div class="home-panel">
+            <div>
+              <h2>Start a match</h2>
+              <p class="subtitle">Create a host-controlled room or join one with a 6-character code.</p>
+            </div>
+            <div class="live-indicator">
+              <span class="live-dot"></span>
+              Ready to play
+            </div>
+            <div class="home-actions">
+              <button class="btn primary" id="showCreate">Create Room →</button>
+              <button class="btn" id="showJoin">Join Room</button>
+            </div>
+            <details class="how-it-works">
+              <summary>How it works</summary>
+              <div class="how-steps">
+                <div class="how-step">
+                  <div class="step-num">1</div>
+                  <div class="step-text">Host creates a private room, picks the word and category</div>
+                </div>
+                <div class="how-step">
+                  <div class="step-num">2</div>
+                  <div class="step-text">Share the 6-character room code with friends</div>
+                </div>
+                <div class="how-step">
+                  <div class="step-num">3</div>
+                  <div class="step-text">Everyone guesses simultaneously — fastest correct solve wins</div>
+                </div>
+              </div>
+            </details>
 
           <form class="form-grid hidden" id="createForm">
             <div class="field">
@@ -700,7 +964,9 @@
               <div class="error" id="joinError"></div>
             </div>
           </form>
+          </div>
         </div>
+        <footer class="home-footer">Made with ☕ for word nerds</footer>
       </section>
 
       <section class="screen" id="lobbyScreen">
