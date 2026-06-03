@@ -1,6 +1,7 @@
 set -e
 
 PROJECT_NAME="diy-wordle-multiplayer"
+SERVICE_NAME="web"
 REPO_NAME="diyWordle"
 REPO_SSH="git@github.com:CodeCrasher/diyWordle.git"
 REPO_HTTPS="https://github.com/CodeCrasher/diyWordle"
@@ -87,16 +88,27 @@ else
   railway init --name "$PROJECT_NAME"
 fi
 
+print_step "Preparing Railway service"
+if railway service list --json 2>/dev/null | grep -Eq "\"name\"[[:space:]]*:[[:space:]]*\"$SERVICE_NAME\""; then
+  echo "Railway service already exists: $SERVICE_NAME"
+else
+  echo "Creating Railway service: $SERVICE_NAME"
+  railway add --service "$SERVICE_NAME" \
+    --variables "NODE_ENV=production" \
+    --variables "ALLOWED_ORIGIN=*"
+fi
+railway service link "$SERVICE_NAME"
+
 print_step "Setting Railway environment variables"
-railway variables set NODE_ENV=production
-railway variables set ALLOWED_ORIGIN="*"
+railway variables set NODE_ENV=production --service "$SERVICE_NAME" --skip-deploys
+railway variables set ALLOWED_ORIGIN="*" --service "$SERVICE_NAME" --skip-deploys
 
 print_step "Triggering Railway deploy"
-railway up --detach
+railway up --service "$SERVICE_NAME" --detach
 
 echo "Waiting for deploy..."
 sleep 60
-LIVE_URL=$(railway domain)
+LIVE_URL=$(railway domain --service "$SERVICE_NAME")
 GITHUB_USER=$(gh api user -q .login)
 
 echo "================================================"
