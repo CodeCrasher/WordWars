@@ -1,0 +1,17 @@
+{
+  "name": "diy-wordle-multiplayer",
+  "version": "1.0.0",
+  "description": "A browser-based multiplayer Wordle-style game with Socket.io.",
+  "main": "server.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5",
+    "uuid": "^9.0.1"
+  }
+}

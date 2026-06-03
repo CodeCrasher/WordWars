@@ -1,0 +1,1433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DIY Wordle Arena</title>
+  <style>
+    :root {
+      --bg: #101218;
+      --panel: #181c25;
+      --panel-2: #202634;
+      --text: #f4f7fb;
+      --muted: #aeb8c8;
+      --line: #313847;
+      --accent: #39d98a;
+      --accent-2: #77a7ff;
+      --danger: #ff5d6c;
+      --warn: #f4c430;
+      --green: #3fb950;
+      --yellow: #d29922;
+      --gray: #4b5565;
+      --shadow: rgba(0, 0, 0, 0.28);
+      --tile: #11151d;
+    }
+
+    [data-theme="light"] {
+      --bg: #f6f8fb;
+      --panel: #ffffff;
+      --panel-2: #edf2f8;
+      --text: #171b23;
+      --muted: #526070;
+      --line: #d8e0eb;
+      --accent: #178f5a;
+      --accent-2: #315fca;
+      --danger: #c93446;
+      --warn: #b87800;
+      --green: #2f8f46;
+      --yellow: #c08b14;
+      --gray: #8a95a3;
+      --shadow: rgba(20, 30, 45, 0.12);
+      --tile: #ffffff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, rgba(119, 167, 255, 0.18), transparent 34rem),
+        linear-gradient(140deg, var(--bg), var(--bg));
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    .app {
+      width: min(1180px, calc(100vw - 32px));
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: 24px 0 40px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .logo {
+      display: grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #06110b;
+      font-weight: 900;
+      box-shadow: 0 12px 30px var(--shadow);
+      flex: 0 0 auto;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: clamp(1.4rem, 3vw, 2.2rem);
+      line-height: 1.1;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      margin-top: 4px;
+      font-size: 0.95rem;
+    }
+
+    .theme-toggle {
+      width: 44px;
+      height: 44px;
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--line);
+      box-shadow: 0 10px 24px var(--shadow);
+    }
+
+    .screen {
+      display: none;
+    }
+
+    .screen.active {
+      display: block;
+    }
+
+    .home {
+      min-height: calc(100vh - 150px);
+      display: grid;
+      place-items: center;
+    }
+
+    .home-panel {
+      width: min(560px, 100%);
+      display: grid;
+      gap: 18px;
+      padding: 30px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--panel) 94%, transparent);
+      box-shadow: 0 22px 70px var(--shadow);
+    }
+
+    .home-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .btn {
+      min-height: 44px;
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: var(--text);
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      border-color: var(--accent-2);
+    }
+
+    .btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #06110b;
+      font-weight: 800;
+    }
+
+    .btn.danger {
+      background: var(--danger);
+      border-color: var(--danger);
+      color: #fff;
+    }
+
+    .btn.ghost {
+      background: transparent;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .field {
+      display: grid;
+      gap: 7px;
+    }
+
+    .field.full {
+      grid-column: 1 / -1;
+    }
+
+    label {
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: var(--text);
+      background: var(--tile);
+      outline: none;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 72px;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: var(--accent-2);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--panel) 96%, transparent);
+      box-shadow: 0 18px 54px var(--shadow);
+      padding: 18px;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .code-box {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px;
+      border: 1px dashed var(--accent-2);
+      border-radius: 8px;
+      background: var(--panel-2);
+      margin-bottom: 16px;
+    }
+
+    .room-code {
+      font-size: clamp(2rem, 6vw, 4rem);
+      font-weight: 950;
+      letter-spacing: 0.12em;
+    }
+
+    .badge-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      border-radius: 999px;
+      padding: 4px 10px;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      color: var(--text);
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+
+    .player-list,
+    .leader-list,
+    .score-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .player-row,
+    .leader-row,
+    .score-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 42px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+    }
+
+    .player-name {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      font-weight: 800;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .game-wrap {
+      display: grid;
+      grid-template-columns: minmax(300px, 1fr) 300px;
+      gap: 20px;
+      align-items: start;
+    }
+
+    .game-main {
+      display: grid;
+      justify-items: center;
+      gap: 16px;
+    }
+
+    .game-meta {
+      width: min(520px, 100%);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .timer {
+      min-width: 88px;
+      text-align: center;
+      border-radius: 8px;
+      padding: 8px 12px;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      font-variant-numeric: tabular-nums;
+      font-weight: 900;
+      font-size: 1.12rem;
+    }
+
+    .timer.danger {
+      color: #fff;
+      background: var(--danger);
+      border-color: var(--danger);
+    }
+
+    .board {
+      width: min(420px, calc(100vw - 36px));
+      display: grid;
+      grid-template-rows: repeat(6, 1fr);
+      gap: 8px;
+      aspect-ratio: 5 / 6;
+    }
+
+    .board-row {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+    }
+
+    .tile {
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      border: 2px solid var(--line);
+      background: var(--tile);
+      color: var(--text);
+      font-size: clamp(1.4rem, 7vw, 2.25rem);
+      font-weight: 950;
+      text-transform: uppercase;
+      transform-style: preserve-3d;
+      transition: transform 360ms ease, background 220ms ease, border-color 220ms ease;
+      user-select: none;
+    }
+
+    .tile.filled {
+      border-color: var(--accent-2);
+    }
+
+    .tile.reveal {
+      transform: rotateX(360deg);
+    }
+
+    .tile.green {
+      background: var(--green);
+      border-color: var(--green);
+      color: #fff;
+    }
+
+    .tile.yellow {
+      background: var(--yellow);
+      border-color: var(--yellow);
+      color: #15120a;
+    }
+
+    .tile.gray {
+      background: var(--gray);
+      border-color: var(--gray);
+      color: #fff;
+    }
+
+    .keyboard {
+      width: min(560px, 100%);
+      display: grid;
+      gap: 7px;
+    }
+
+    .key-row {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .key {
+      min-width: 0;
+      width: 42px;
+      height: 48px;
+      border-radius: 8px;
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid var(--line);
+      font-size: 0.95rem;
+      font-weight: 900;
+      padding: 0 6px;
+    }
+
+    .key.wide {
+      width: 72px;
+      font-size: 0.8rem;
+    }
+
+    .key.green {
+      background: var(--green);
+      color: #fff;
+    }
+
+    .key.yellow {
+      background: var(--yellow);
+      color: #15120a;
+    }
+
+    .key.gray {
+      background: var(--gray);
+      color: #fff;
+    }
+
+    .hint-box {
+      width: min(520px, 100%);
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .podium {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      align-items: end;
+      margin: 20px 0;
+    }
+
+    .podium-place {
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      gap: 8px;
+      min-height: 138px;
+      padding: 16px 10px;
+      border-radius: 8px;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      text-align: center;
+      overflow-wrap: anywhere;
+    }
+
+    .podium-place.first {
+      min-height: 178px;
+      border-color: var(--warn);
+    }
+
+    .medal {
+      font-size: 2rem;
+    }
+
+    .toast-stack {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      display: grid;
+      gap: 10px;
+      z-index: 40;
+    }
+
+    .toast {
+      max-width: min(360px, calc(100vw - 36px));
+      padding: 12px 14px;
+      border-radius: 8px;
+      background: var(--panel);
+      border: 1px solid var(--accent-2);
+      box-shadow: 0 18px 45px var(--shadow);
+      color: var(--text);
+      animation: rise 220ms ease-out;
+    }
+
+    .countdown-banner {
+      position: fixed;
+      inset: 16px 16px auto;
+      display: none;
+      z-index: 35;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    .countdown-banner.active {
+      display: flex;
+    }
+
+    .countdown-banner span {
+      padding: 14px 20px;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #06110b;
+      font-weight: 950;
+      box-shadow: 0 18px 45px var(--shadow);
+    }
+
+    .error {
+      color: var(--danger);
+      min-height: 20px;
+      font-weight: 700;
+    }
+
+    @keyframes rise {
+      from {
+        transform: translateY(12px);
+        opacity: 0;
+      }
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    @media (max-width: 860px) {
+      .layout,
+      .game-wrap {
+        grid-template-columns: 1fr;
+      }
+
+      .home-actions,
+      .form-grid,
+      .podium {
+        grid-template-columns: 1fr;
+      }
+
+      .key {
+        width: clamp(28px, 8vw, 42px);
+        height: 44px;
+        font-size: 0.82rem;
+      }
+
+      .key.wide {
+        width: clamp(54px, 16vw, 72px);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app" id="app" data-theme="dark">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">W</div>
+        <div>
+          <h1>DIY Wordle Arena</h1>
+          <p class="subtitle">Private-room competitive Wordle for fast fingers and sharper guesses.</p>
+        </div>
+      </div>
+      <button class="theme-toggle" id="themeToggle" title="Toggle theme" aria-label="Toggle theme">☾</button>
+    </header>
+
+    <main>
+      <section class="screen home active" id="homeScreen">
+        <div class="home-panel">
+          <div>
+            <h2>Start a match</h2>
+            <p class="subtitle">Create a host-controlled room or join one with a 6-character code.</p>
+          </div>
+          <div class="home-actions">
+            <button class="btn primary" id="showCreate">Create Room</button>
+            <button class="btn" id="showJoin">Join Room</button>
+          </div>
+
+          <form class="form-grid hidden" id="createForm">
+            <div class="field">
+              <label for="hostName">Host Name</label>
+              <input id="hostName" maxlength="16" value="Host123" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="adminPin">Admin PIN</label>
+              <input id="adminPin" type="password" value="1234" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="wordInput">Word of the Day</label>
+              <input id="wordInput" maxlength="5" placeholder="CRANE" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="categoryInput">Category</label>
+              <select id="categoryInput"></select>
+            </div>
+            <div class="field hidden" id="customCategoryWrap">
+              <label for="customCategoryInput">Custom Category</label>
+              <input id="customCategoryInput" maxlength="32" placeholder="Indie Games" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="timerInput">Round Timer</label>
+              <select id="timerInput">
+                <option value="60">60 seconds</option>
+                <option value="120">2 minutes</option>
+                <option value="180" selected>3 minutes</option>
+                <option value="300">5 minutes</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="roundsInput">Rounds</label>
+              <input id="roundsInput" type="number" min="1" max="10" value="1">
+            </div>
+            <div class="field full">
+              <label for="hintInput">Hint After 3 Failed Attempts</label>
+              <textarea id="hintInput" maxlength="140" placeholder="Optional hint"></textarea>
+            </div>
+            <div class="field full">
+              <button class="btn primary" type="submit">Create Private Room</button>
+              <div class="error" id="createError"></div>
+            </div>
+          </form>
+
+          <form class="form-grid hidden" id="joinForm">
+            <div class="field">
+              <label for="joinName">Display Name</label>
+              <input id="joinName" maxlength="16" placeholder="Player7" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="joinCode">Room Code</label>
+              <input id="joinCode" maxlength="6" placeholder="XK92PL" autocomplete="off">
+            </div>
+            <div class="field full">
+              <button class="btn primary" type="submit">Join Room</button>
+              <div class="error" id="joinError"></div>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="screen" id="lobbyScreen">
+        <div class="layout">
+          <div class="panel">
+            <div class="panel-head">
+              <div>
+                <h2 id="lobbyTitle">Lobby</h2>
+                <p class="subtitle" id="lobbyStatus">Waiting for players.</p>
+              </div>
+              <span class="badge" id="hostBadge">Player</span>
+            </div>
+            <div class="code-box">
+              <div>
+                <p class="muted">Room code</p>
+                <div class="room-code" id="roomCodeText">------</div>
+              </div>
+              <button class="btn" id="copyCodeBtn">Copy</button>
+            </div>
+            <div class="badge-row" id="configBadges"></div>
+            <h3 style="margin-top:18px;">Players</h3>
+            <div class="player-list" id="lobbyPlayers"></div>
+          </div>
+
+          <aside class="panel" id="adminPanel">
+            <div class="panel-head">
+              <div>
+                <h2>Admin Panel</h2>
+                <p class="subtitle">Configure the next launch.</p>
+              </div>
+            </div>
+            <form class="form-grid" id="adminForm">
+              <div class="field full">
+                <label for="adminWord">Next Word</label>
+                <input id="adminWord" maxlength="5" autocomplete="off">
+              </div>
+              <div class="field full">
+                <label for="adminCategory">Category</label>
+                <select id="adminCategory"></select>
+              </div>
+              <div class="field full hidden" id="adminCustomWrap">
+                <label for="adminCustomCategory">Custom Category</label>
+                <input id="adminCustomCategory" maxlength="32" autocomplete="off">
+              </div>
+              <div class="field full">
+                <label for="adminHint">Hint</label>
+                <textarea id="adminHint" maxlength="140"></textarea>
+              </div>
+              <div class="field">
+                <label for="adminTimer">Timer</label>
+                <select id="adminTimer">
+                  <option value="60">60s</option>
+                  <option value="120">2min</option>
+                  <option value="180">3min</option>
+                  <option value="300">5min</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="adminRounds">Rounds</label>
+                <input id="adminRounds" type="number" min="1" max="10">
+              </div>
+              <div class="field full">
+                <button class="btn primary" id="startGameBtn" type="submit">Start Game</button>
+                <button class="btn" id="forceStartBtn" type="button">Force Start 10s</button>
+                <div class="error" id="adminError"></div>
+              </div>
+            </form>
+          </aside>
+        </div>
+      </section>
+
+      <section class="screen" id="gameScreen">
+        <div class="game-wrap">
+          <div class="panel game-main">
+            <div class="game-meta">
+              <div class="badge-row">
+                <span class="badge" id="gameCategory">Category</span>
+                <span class="badge" id="roundBadge">Round 1/1</span>
+              </div>
+              <div class="timer" id="timerText">3:00</div>
+            </div>
+            <div class="board" id="board"></div>
+            <div class="hint-box" id="hintBox">Hint unlocks after 3 failed attempts.</div>
+            <div class="keyboard" id="keyboard"></div>
+          </div>
+          <aside class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Live Board</h2>
+                <p class="subtitle">Solved players appear as the round unfolds.</p>
+              </div>
+            </div>
+            <div class="leader-list" id="liveLeaderboard"></div>
+            <button class="btn danger hidden" id="endRoundBtn" style="width:100%; margin-top:16px;">End Round</button>
+          </aside>
+        </div>
+      </section>
+
+      <section class="screen" id="roundEndScreen">
+        <div class="layout">
+          <div class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Round Complete</h2>
+                <p class="subtitle" id="roundEndSubtitle">Scores are locked.</p>
+              </div>
+              <span class="badge" id="wordReveal">WORD</span>
+            </div>
+            <div class="score-list" id="roundLeaderboard"></div>
+          </div>
+          <aside class="panel" id="nextRoundPanel">
+            <h2>Next Round</h2>
+            <p class="subtitle" style="margin-bottom:14px;">Host can set a new word before continuing.</p>
+            <form class="form-grid" id="nextRoundForm">
+              <div class="field full">
+                <label for="nextWord">Word</label>
+                <input id="nextWord" maxlength="5" autocomplete="off">
+              </div>
+              <div class="field full">
+                <label for="nextCategory">Category</label>
+                <select id="nextCategory"></select>
+              </div>
+              <div class="field full hidden" id="nextCustomWrap">
+                <label for="nextCustomCategory">Custom Category</label>
+                <input id="nextCustomCategory" maxlength="32" autocomplete="off">
+              </div>
+              <div class="field full">
+                <label for="nextHint">Hint</label>
+                <textarea id="nextHint" maxlength="140"></textarea>
+              </div>
+              <div class="field full">
+                <button class="btn primary" type="submit">Start Next Round</button>
+                <div class="error" id="nextError"></div>
+              </div>
+            </form>
+          </aside>
+        </div>
+      </section>
+
+      <section class="screen" id="sessionEndScreen">
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Final Podium</h2>
+              <p class="subtitle">Cumulative scores across all rounds.</p>
+            </div>
+          </div>
+          <div class="podium" id="podium"></div>
+          <div class="score-list" id="finalScores"></div>
+          <div class="home-actions" style="margin-top:18px;">
+            <button class="btn primary" id="playAgainBtn">Play Again</button>
+            <button class="btn" id="newSessionBtn">New Session</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="countdown-banner" id="countdownBanner"><span id="countdownText">Starting in 10</span></div>
+  <div class="toast-stack" id="toastStack"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const categories = [
+      "Animals",
+      "Food & Drink",
+      "Science",
+      "Sports",
+      "Geography",
+      "Movies & TV",
+      "Music",
+      "Tech",
+      "History",
+      "Mythology",
+      "Custom"
+    ];
+
+    const state = {
+      screen: "home",
+      playerId: null,
+      isHost: false,
+      room: null,
+      game: {
+        round: 0,
+        totalRounds: 1,
+        roundTime: 180,
+        remaining: 180,
+        category: "",
+        hintAvailable: false,
+        maxGuesses: 6,
+        currentRow: 0,
+        currentCol: 0,
+        rows: Array.from({ length: 6 }, () => Array(5).fill("")),
+        feedback: Array.from({ length: 6 }, () => Array(5).fill("")),
+        keyState: {},
+        locked: false,
+        solved: false,
+        hint: ""
+      }
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    function fillCategorySelect(select) {
+      select.innerHTML = categories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join("");
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[char]));
+    }
+
+    function showScreen(name) {
+      state.screen = name;
+      document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("active"));
+      $(`${name}Screen`).classList.add("active");
+    }
+
+    function showToast(message) {
+      const toast = document.createElement("div");
+      toast.className = "toast";
+      toast.textContent = message;
+      $("toastStack").appendChild(toast);
+      setTimeout(() => toast.remove(), 3600);
+    }
+
+    function setError(id, message) {
+      $(id).textContent = message || "";
+    }
+
+    function formatTime(seconds) {
+      const safe = Math.max(0, Number(seconds) || 0);
+      const mins = Math.floor(safe / 60);
+      const secs = String(safe % 60).padStart(2, "0");
+      return `${mins}:${secs}`;
+    }
+
+    function getConfiguredCategory(prefix) {
+      const category = $(`${prefix}Category`)?.value || $(`${prefix}Input`)?.value || "Custom";
+      if (category === "Custom") {
+        return $(`${prefix}CustomCategory`)?.value || $("customCategoryInput")?.value || "Custom";
+      }
+      return category;
+    }
+
+    function currentAdminPayload(prefix = "admin") {
+      const wordEl = prefix === "admin" ? $("adminWord") : prefix === "next" ? $("nextWord") : $("wordInput");
+      const hintEl = prefix === "admin" ? $("adminHint") : prefix === "next" ? $("nextHint") : $("hintInput");
+      const timerEl = prefix === "admin" ? $("adminTimer") : $("timerInput");
+      const roundsEl = prefix === "admin" ? $("adminRounds") : $("roundsInput");
+      return {
+        word: wordEl.value.trim(),
+        category: getConfiguredCategory(prefix),
+        hint: hintEl.value.trim(),
+        roundTime: Number(timerEl.value),
+        totalRounds: Number(roundsEl.value)
+      };
+    }
+
+    function syncCustomVisibility(selectId, wrapId) {
+      const select = $(selectId);
+      const wrap = $(wrapId);
+      wrap.classList.toggle("hidden", select.value !== "Custom");
+    }
+
+    function initControls() {
+      ["categoryInput", "adminCategory", "nextCategory"].forEach((id) => fillCategorySelect($(id)));
+      $("categoryInput").addEventListener("change", () => syncCustomVisibility("categoryInput", "customCategoryWrap"));
+      $("adminCategory").addEventListener("change", () => syncCustomVisibility("adminCategory", "adminCustomWrap"));
+      $("nextCategory").addEventListener("change", () => syncCustomVisibility("nextCategory", "nextCustomWrap"));
+
+      $("themeToggle").addEventListener("click", () => {
+        const app = $("app");
+        const next = app.dataset.theme === "dark" ? "light" : "dark";
+        app.dataset.theme = next;
+        $("themeToggle").textContent = next === "dark" ? "☾" : "☀";
+      });
+
+      $("showCreate").addEventListener("click", () => {
+        $("createForm").classList.remove("hidden");
+        $("joinForm").classList.add("hidden");
+      });
+
+      $("showJoin").addEventListener("click", () => {
+        $("joinForm").classList.remove("hidden");
+        $("createForm").classList.add("hidden");
+      });
+
+      $("copyCodeBtn").addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(state.room?.code || "");
+          showToast("Room code copied.");
+        } catch (_error) {
+          showToast("Copy failed. The room code is visible on screen.");
+        }
+      });
+
+      $("createForm").addEventListener("submit", createRoom);
+      $("joinForm").addEventListener("submit", joinRoom);
+      $("adminForm").addEventListener("submit", startFromAdmin);
+      $("nextRoundForm").addEventListener("submit", startNextRound);
+      $("forceStartBtn").addEventListener("click", forceStart);
+      $("endRoundBtn").addEventListener("click", endRound);
+      $("playAgainBtn").addEventListener("click", () => showScreen("home"));
+      $("newSessionBtn").addEventListener("click", () => window.location.reload());
+
+      document.addEventListener("keydown", handlePhysicalKey);
+    }
+
+    function createRoom(event) {
+      event.preventDefault();
+      setError("createError", "");
+      const category = $("categoryInput").value;
+      socket.emit("room:create", {
+        name: $("hostName").value.trim(),
+        pin: $("adminPin").value,
+        word: $("wordInput").value.trim(),
+        category,
+        customCategory: $("customCategoryInput").value.trim(),
+        hint: $("hintInput").value.trim(),
+        roundTime: Number($("timerInput").value),
+        totalRounds: Number($("roundsInput").value)
+      }, (response) => {
+        if (!response?.ok) return setError("createError", response?.error || "Could not create room.");
+        enterRoom(response);
+      });
+    }
+
+    function joinRoom(event) {
+      event.preventDefault();
+      setError("joinError", "");
+      socket.emit("room:join", {
+        name: $("joinName").value.trim(),
+        code: $("joinCode").value.trim()
+      }, (response) => {
+        if (!response?.ok) return setError("joinError", response?.error || "Could not join room.");
+        enterRoom(response);
+      });
+    }
+
+    function enterRoom(response) {
+      state.playerId = response.playerId;
+      state.isHost = Boolean(response.isHost);
+      state.room = response.room;
+      preloadAdminConfig();
+      renderLobby();
+      showScreen("lobby");
+    }
+
+    function preloadAdminConfig() {
+      if (!state.room) return;
+      $("adminWord").value = "";
+      $("adminHint").value = "";
+      $("adminTimer").value = String(state.room.roundTime || 180);
+      $("adminRounds").value = state.room.totalRounds || 1;
+      setSelectToCategory("adminCategory", state.room.category);
+      $("nextCategory").value = $("adminCategory").value;
+      $("nextHint").value = "";
+      syncCustomVisibility("adminCategory", "adminCustomWrap");
+      syncCustomVisibility("nextCategory", "nextCustomWrap");
+    }
+
+    function setSelectToCategory(id, category) {
+      const select = $(id);
+      if (categories.includes(category)) {
+        select.value = category;
+      } else {
+        select.value = "Custom";
+        const customId = id === "adminCategory" ? "adminCustomCategory" : id === "nextCategory" ? "nextCustomCategory" : "customCategoryInput";
+        $(customId).value = category || "";
+      }
+    }
+
+    function renderLobby() {
+      if (!state.room) return;
+      $("roomCodeText").textContent = state.room.code;
+      $("lobbyTitle").textContent = state.isHost ? "Host Lobby" : "Player Lobby";
+      $("lobbyStatus").textContent = state.isHost ? "Share the code, tune the settings, then start when ready." : "Waiting for the host to start.";
+      $("hostBadge").textContent = state.isHost ? "Host" : "Player";
+      $("adminPanel").classList.toggle("hidden", !state.isHost);
+
+      $("configBadges").innerHTML = [
+        state.room.category,
+        `${formatTime(state.room.roundTime)} timer`,
+        `${state.room.totalRounds} round${state.room.totalRounds === 1 ? "" : "s"}`,
+        `${state.room.players.length}/${20} players`
+      ].map((item) => `<span class="badge">${escapeHtml(item)}</span>`).join("");
+
+      $("lobbyPlayers").innerHTML = state.room.players.map((player) => `
+        <div class="player-row">
+          <div>
+            <div class="player-name">${escapeHtml(player.name)} ${player.isHost ? "• Host" : ""}</div>
+            <div class="muted">${player.active ? "In lobby" : "Inactive"} · ${player.cumulativeScore} pts</div>
+          </div>
+          ${state.isHost && !player.isHost ? `<button class="btn danger" data-kick="${player.id}">Kick</button>` : `<span class="badge">${player.connected ? "Online" : "Away"}</span>`}
+        </div>
+      `).join("");
+
+      document.querySelectorAll("[data-kick]").forEach((button) => {
+        button.addEventListener("click", () => kickPlayer(button.dataset.kick));
+      });
+    }
+
+    function kickPlayer(playerId) {
+      socket.emit("room:kick", { playerId }, (response) => {
+        if (!response?.ok) showToast(response?.error || "Could not kick player.");
+      });
+    }
+
+    function startFromAdmin(event) {
+      event.preventDefault();
+      setError("adminError", "");
+      socket.emit("game:start", currentAdminPayload("admin"), (response) => {
+        if (!response?.ok) setError("adminError", response?.error || "Could not start game.");
+      });
+    }
+
+    function forceStart() {
+      setError("adminError", "");
+      socket.emit("game:forceStart", currentAdminPayload("admin"), (response) => {
+        if (!response?.ok) setError("adminError", response?.error || "Could not force-start.");
+      });
+    }
+
+    function startNextRound(event) {
+      event.preventDefault();
+      setError("nextError", "");
+      const payload = {
+        ...currentAdminPayload("next"),
+        roundTime: state.room?.roundTime || state.game.roundTime,
+        totalRounds: state.room?.totalRounds || state.game.totalRounds
+      };
+      socket.emit("game:start", payload, (response) => {
+        if (!response?.ok) setError("nextError", response?.error || "Could not start next round.");
+      });
+    }
+
+    function endRound() {
+      socket.emit("game:endRound", {}, (response) => {
+        if (!response?.ok) showToast(response?.error || "Could not end round.");
+      });
+    }
+
+    function resetGameBoard(payload) {
+      state.game = {
+        round: payload.round,
+        totalRounds: payload.totalRounds,
+        roundTime: payload.roundTime,
+        remaining: payload.roundTime,
+        category: payload.category,
+        hintAvailable: payload.hintAvailable,
+        maxGuesses: payload.maxGuesses,
+        currentRow: 0,
+        currentCol: 0,
+        rows: Array.from({ length: payload.maxGuesses }, () => Array(payload.wordLength).fill("")),
+        feedback: Array.from({ length: payload.maxGuesses }, () => Array(payload.wordLength).fill("")),
+        keyState: {},
+        locked: false,
+        solved: false,
+        hint: ""
+      };
+      $("gameCategory").textContent = payload.category;
+      $("roundBadge").textContent = `Round ${payload.round}/${payload.totalRounds}`;
+      $("hintBox").textContent = payload.hintAvailable ? "Hint unlocks after 3 failed attempts." : "No hint for this round.";
+      $("endRoundBtn").classList.toggle("hidden", !state.isHost);
+      $("liveLeaderboard").innerHTML = `<div class="muted">No solves yet.</div>`;
+      renderBoard();
+      renderKeyboard();
+      updateTimer(payload.roundTime);
+      showScreen("game");
+    }
+
+    function renderBoard() {
+      const board = $("board");
+      board.innerHTML = state.game.rows.map((row, rowIndex) => `
+        <div class="board-row">
+          ${row.map((letter, colIndex) => {
+            const color = state.game.feedback[rowIndex][colIndex];
+            const classes = ["tile", letter ? "filled" : "", color || ""].filter(Boolean).join(" ");
+            return `<div class="${classes}" data-row="${rowIndex}" data-col="${colIndex}">${escapeHtml(letter)}</div>`;
+          }).join("")}
+        </div>
+      `).join("");
+    }
+
+    function renderKeyboard() {
+      const rows = ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"];
+      $("keyboard").innerHTML = rows.map((letters, index) => {
+        const keys = letters.split("").map((letter) => `<button class="key ${state.game.keyState[letter] || ""}" data-key="${letter}">${letter}</button>`);
+        if (index === 2) {
+          keys.unshift(`<button class="key wide" data-key="ENTER">ENTER</button>`);
+          keys.push(`<button class="key wide" data-key="BACKSPACE">⌫</button>`);
+        }
+        return `<div class="key-row">${keys.join("")}</div>`;
+      }).join("");
+      document.querySelectorAll("[data-key]").forEach((button) => {
+        button.addEventListener("click", () => handleKey(button.dataset.key));
+      });
+    }
+
+    function handlePhysicalKey(event) {
+      if (state.screen !== "game") return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (/^[a-zA-Z]$/.test(event.key)) handleKey(event.key.toUpperCase());
+      if (event.key === "Enter") handleKey("ENTER");
+      if (event.key === "Backspace") handleKey("BACKSPACE");
+    }
+
+    function handleKey(key) {
+      if (state.screen !== "game" || state.game.locked || state.game.solved) return;
+      if (/^[A-Z]$/.test(key) && state.game.currentCol < 5) {
+        state.game.rows[state.game.currentRow][state.game.currentCol] = key;
+        state.game.currentCol += 1;
+        renderBoard();
+        return;
+      }
+      if (key === "BACKSPACE" && state.game.currentCol > 0) {
+        state.game.currentCol -= 1;
+        state.game.rows[state.game.currentRow][state.game.currentCol] = "";
+        renderBoard();
+        return;
+      }
+      if (key === "ENTER") submitGuess();
+    }
+
+    function submitGuess() {
+      const guess = state.game.rows[state.game.currentRow].join("");
+      if (guess.length !== 5) {
+        showToast("Enter a 5-letter guess.");
+        return;
+      }
+      state.game.locked = true;
+      socket.emit("game:guess", { guess }, (response) => {
+        state.game.locked = false;
+        if (!response?.ok) {
+          showToast(response?.error || "Guess rejected.");
+          return;
+        }
+        applyGuessResult(response);
+      });
+    }
+
+    function applyGuessResult(response) {
+      const rowIndex = state.game.currentRow;
+      state.game.feedback[rowIndex] = response.feedback;
+      response.guess.split("").forEach((letter, index) => {
+        const color = response.feedback[index];
+        updateKeyState(letter, color);
+      });
+      renderBoard();
+      renderKeyboard();
+      animateRow(rowIndex);
+
+      if (response.hint) {
+        state.game.hint = response.hint;
+        $("hintBox").textContent = `Hint: ${response.hint}`;
+      }
+
+      if (response.solved) {
+        state.game.solved = true;
+        $("hintBox").textContent = "Solved. Waiting for the round to finish.";
+        return;
+      }
+
+      state.game.currentRow += 1;
+      state.game.currentCol = 0;
+      if (state.game.currentRow >= state.game.maxGuesses) {
+        state.game.locked = true;
+        $("hintBox").textContent = "No guesses left. Waiting for the round to finish.";
+      }
+    }
+
+    function updateKeyState(letter, color) {
+      const rank = { gray: 1, yellow: 2, green: 3 };
+      const current = state.game.keyState[letter];
+      if (!current || rank[color] > rank[current]) {
+        state.game.keyState[letter] = color;
+      }
+    }
+
+    function animateRow(rowIndex) {
+      document.querySelectorAll(`[data-row="${rowIndex}"]`).forEach((tile, index) => {
+        setTimeout(() => tile.classList.add("reveal"), index * 90);
+      });
+    }
+
+    function updateTimer(remaining) {
+      state.game.remaining = remaining;
+      $("timerText").textContent = formatTime(remaining);
+      $("timerText").classList.toggle("danger", remaining <= 30);
+    }
+
+    function renderLiveLeaderboard(leaderboard = []) {
+      $("liveLeaderboard").innerHTML = leaderboard.length ? leaderboard.map((entry, index) => `
+        <div class="leader-row">
+          <div>
+            <strong>${index + 1}. ${escapeHtml(entry.name)}</strong>
+            <div class="muted">${formatTime(entry.time)} · ${entry.guessesUsed} guesses</div>
+          </div>
+          <strong>${entry.score}</strong>
+        </div>
+      `).join("") : `<div class="muted">No solves yet.</div>`;
+    }
+
+    function renderRoundEnd(payload) {
+      $("roundEndSubtitle").textContent = `Round ${payload.round}/${payload.totalRounds} ended by ${payload.reason}.`;
+      $("wordReveal").textContent = payload.word;
+      $("roundLeaderboard").innerHTML = payload.leaderboard.map((entry, index) => `
+        <div class="score-row">
+          <div>
+            <strong>${index + 1}. ${escapeHtml(entry.name)}</strong>
+            <div class="muted">
+              ${entry.solved ? `${formatTime(entry.time)} · ${entry.guessesUsed} guesses` : "Did not solve"}
+            </div>
+            <div class="muted">
+              Base ${entry.breakdown.base} + Time ${entry.breakdown.timeBonus} + Guess ${entry.breakdown.guessBonus}
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <strong>${entry.score}</strong>
+            <div class="muted">${entry.cumulativeScore} total</div>
+          </div>
+        </div>
+      `).join("");
+
+      const hasNext = payload.round < payload.totalRounds;
+      $("nextRoundPanel").classList.toggle("hidden", !state.isHost || !hasNext);
+      $("nextWord").value = "";
+      $("nextHint").value = "";
+      setSelectToCategory("nextCategory", state.game.category);
+      syncCustomVisibility("nextCategory", "nextCustomWrap");
+      showScreen("roundEnd");
+    }
+
+    function renderSessionEnd(payload) {
+      const top = payload.leaderboard.slice(0, 3);
+      const places = [
+        { medal: "🥈", label: "2nd", item: top[1], className: "" },
+        { medal: "🥇", label: "1st", item: top[0], className: "first" },
+        { medal: "🥉", label: "3rd", item: top[2], className: "" }
+      ];
+      $("podium").innerHTML = places.map((place) => `
+        <div class="podium-place ${place.className}">
+          <div class="medal">${place.medal}</div>
+          <strong>${place.item ? escapeHtml(place.item.name) : "Vacant"}</strong>
+          <div class="muted">${place.item ? `${place.item.cumulativeScore} pts` : place.label}</div>
+        </div>
+      `).join("");
+      $("finalScores").innerHTML = payload.leaderboard.map((entry, index) => `
+        <div class="score-row">
+          <strong>${index + 1}. ${escapeHtml(entry.name)}</strong>
+          <strong>${entry.cumulativeScore} pts</strong>
+        </div>
+      `).join("");
+      showScreen("sessionEnd");
+    }
+
+    socket.on("room:created", ({ room, playerId }) => {
+      state.playerId = playerId;
+      state.isHost = true;
+      state.room = room;
+      renderLobby();
+    });
+
+    socket.on("room:playerJoined", (room) => {
+      state.room = room;
+      if (state.screen === "lobby") renderLobby();
+    });
+
+    socket.on("room:playerLeft", (room) => {
+      state.room = room;
+      if (state.screen === "lobby") renderLobby();
+    });
+
+    socket.on("room:hostChanged", ({ hostId, hostName, room }) => {
+      state.room = room;
+      state.isHost = state.playerId === hostId;
+      showToast(`${hostName} is now the host.`);
+      if (state.screen === "lobby") renderLobby();
+      $("endRoundBtn").classList.toggle("hidden", !state.isHost);
+    });
+
+    socket.on("room:kicked", ({ reason }) => {
+      showToast(reason || "You were removed from the room.");
+      state.room = null;
+      state.isHost = false;
+      showScreen("home");
+    });
+
+    socket.on("room:expired", () => {
+      showToast("Room expired after inactivity.");
+      window.location.reload();
+    });
+
+    socket.on("room:error", ({ error }) => showToast(error || "Room error."));
+
+    socket.on("game:countdown", ({ remaining }) => {
+      $("countdownBanner").classList.toggle("active", remaining > 0);
+      $("countdownText").textContent = `Starting in ${remaining}`;
+      if (remaining <= 0) $("countdownBanner").classList.remove("active");
+    });
+
+    socket.on("game:started", (payload) => {
+      $("countdownBanner").classList.remove("active");
+      resetGameBoard(payload);
+    });
+
+    socket.on("game:playerSolved", (payload) => {
+      renderLiveLeaderboard(payload.leaderboard);
+      if (payload.id !== state.playerId) {
+        showToast(`🎉 ${payload.name} solved it!`);
+      }
+    });
+
+    socket.on("game:timerTick", ({ remaining }) => updateTimer(remaining));
+    socket.on("game:roundEnd", renderRoundEnd);
+    socket.on("game:sessionEnd", renderSessionEnd);
+
+    initControls();
+    renderBoard();
+    renderKeyboard();
+  </script>
+</body>
+</html>
