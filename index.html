@@ -1148,14 +1148,14 @@
       }
       .board {
         width: 100%;
-        max-width: min(290px, calc(100vw - 52px));
+        max-width: min(255px, calc(100vw - 52px));
         gap: 5px;
       }
       .board-row {
         gap: 5px;
       }
       .tile {
-        font-size: clamp(1rem, 5.5vw, 1.6rem);
+        font-size: clamp(1rem, 5vw, 1.4rem);
         border-radius: 5px;
       }
       .hint-box {
@@ -1174,22 +1174,22 @@
       /* FIX 6 — Keyboard on mobile */
       .keyboard {
         width: 100%;
-        gap: 5px;
-        padding: 4px 2px;
-        padding-bottom: max(6px, env(safe-area-inset-bottom));
+        gap: 7px;
+        padding: 6px 4px;
+        padding-bottom: max(8px, env(safe-area-inset-bottom));
         box-sizing: border-box;
       }
       .key-row {
-        gap: 5px;
+        gap: 6px;
         padding: 0;
       }
       .key {
         flex: 1;
         min-width: 0;
-        height: 44px;
-        font-size: 0.8rem;
+        height: 56px;
+        font-size: 1rem;
         font-weight: 700;
-        border-radius: 6px;
+        border-radius: 8px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1202,7 +1202,7 @@
       .key--backspace {
         flex: 1.6;
         min-width: 0;
-        font-size: 0.72rem;
+        font-size: 0.82rem;
         font-weight: 800;
         white-space: nowrap;
         overflow: hidden;
@@ -1306,12 +1306,12 @@
 
       /* FIX 14 — Additional 320px fixes */
       .tile {
-        font-size: 1rem;
+        font-size: 0.9rem;
         border-radius: 4px;
       }
       .key {
-        height: 40px;
-        font-size: 0.72rem;
+        height: 50px;
+        font-size: 0.88rem;
       }
       .key.wide,
       .key--backspace {
@@ -1322,14 +1322,14 @@
         font-size: 1rem;
       }
       .board {
-        max-width: min(240px, 75vw);
+        max-width: min(210px, 65vw);
         gap: 4px;
       }
       .board-row {
         gap: 4px;
       }
       .key-row {
-        gap: 3px;
+        gap: 4px;
       }
     }
   </style>
