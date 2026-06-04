@@ -689,6 +689,60 @@
       to { transform: translateY(0); opacity: 1; }
     }
 
+    @keyframes scaleUp {
+      from { transform: scale(0.82); opacity: 0; }
+      to   { transform: scale(1);    opacity: 1; }
+    }
+
+    .solve-overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(10, 5, 2, 0.70);
+      backdrop-filter: blur(6px);
+      z-index: 50;
+      animation: rise 200ms ease-out;
+    }
+
+    .solve-card {
+      background: var(--panel);
+      border: 1px solid var(--accent-2);
+      border-radius: 20px;
+      padding: 36px 32px;
+      text-align: center;
+      max-width: min(380px, calc(100vw - 48px));
+      box-shadow: 0 28px 80px var(--shadow);
+      animation: scaleUp 280ms ease-out;
+    }
+
+    .solve-emoji {
+      font-size: 3.5rem;
+      line-height: 1;
+      margin-bottom: 12px;
+    }
+
+    .solve-heading {
+      font-size: 1.6rem;
+      font-weight: 950;
+      margin: 0 0 10px;
+    }
+
+    .solve-pun {
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.5;
+      margin: 0 0 10px;
+    }
+
+    .solve-stats {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin: 0;
+      opacity: 0.7;
+    }
+
     @keyframes pulse {
       0%, 100% { transform: scale(1); }
       50% { transform: scale(1.04); }
@@ -1262,6 +1316,15 @@
     </main>
   </div>
 
+  <div id="solveOverlay" class="solve-overlay hidden">
+    <div class="solve-card">
+      <div id="solveEmoji" class="solve-emoji">🎉</div>
+      <p id="solveHeading" class="solve-heading"></p>
+      <p id="solvePun" class="solve-pun"></p>
+      <p id="solveStats" class="solve-stats"></p>
+    </div>
+  </div>
+
   <div class="countdown-banner" id="countdownBanner"><span id="countdownText">Starting in 10</span></div>
   <div class="toast-stack" id="toastStack"></div>
 
@@ -1285,6 +1348,7 @@
     const state = {
       screen: "home",
       playerId: null,
+      sessionId: null,   // immutable token returned by server; survives socket reconnects
       isHost: false,
       room: null,
       game: {
@@ -1307,6 +1371,52 @@
     };
 
     const $ = (id) => document.getElementById(id);
+
+    const SOLVE_HEADINGS = ["", "Unbelievable!", "Word wizard!", "Three-mendous!", "Nice work!", "Close call!", "Last chance hero!"];
+    const SOLVE_PUNS = {
+      1: ["One guess? We're calling the dictionary police.", "Are you psychic, or just showing off?", "One and done — you barely needed us."],
+      2: ["Two-riffic! Your vocabulary is out here flexing.", "Twice as nice — you make this look unfair.", "Two guesses? Your brain runs on something stronger than coffee."],
+      3: ["Three-mendous! You cracked the code.", "Three and free — textbook word surgery.", "Three's the charm, and charm is your middle name."],
+      4: ["Four-midable effort. You wore that word down.", "Four guesses, zero regrets.", "Four-tunately for everyone, you pulled through."],
+      5: ["High-five — literally five guesses.", "Five alive! Clutch when it counts.", "Fifth gear, maximum effort. Worth it."],
+      6: ["Last chance, nailed it. You live on the edge.", "Six guesses but it still counts — we see you.", "Squeezed it in on six. That's called drama."]
+    };
+    const FAIL_PUNS = [
+      "The word won this round. It happens to the best.",
+      "Plot twist: the word was the main character today.",
+      "Some words just play hard to get.",
+      "Your letters were all there — just not in that order.",
+      "Technically, you narrowed it down for everyone else."
+    ];
+
+    function pickRandom(arr) {
+      return arr[Math.floor(Math.random() * arr.length)];
+    }
+
+    function showSolveOverlay(solved, guessesUsed, then) {
+      const overlay = $("solveOverlay");
+      if (solved) {
+        $("solveEmoji").textContent = guessesUsed <= 2 ? "🔥" : guessesUsed <= 4 ? "🎉" : "😅";
+        $("solveHeading").textContent = SOLVE_HEADINGS[guessesUsed] || "Got it!";
+        $("solvePun").textContent = pickRandom(SOLVE_PUNS[guessesUsed] || SOLVE_PUNS[6]);
+        $("solveStats").textContent = `Solved in ${guessesUsed} guess${guessesUsed === 1 ? "" : "es"} — tap to continue`;
+      } else {
+        $("solveEmoji").textContent = "😬";
+        $("solveHeading").textContent = "Better luck next round!";
+        $("solvePun").textContent = pickRandom(FAIL_PUNS);
+        $("solveStats").textContent = "Tap to continue";
+      }
+      overlay.classList.remove("hidden");
+      let gone = false;
+      const dismiss = () => {
+        if (gone) return;
+        gone = true;
+        overlay.classList.add("hidden");
+        then();
+      };
+      setTimeout(dismiss, 2600);
+      overlay.addEventListener("click", dismiss, { once: true });
+    }
 
     function fillCategorySelect(select) {
       select.innerHTML = categories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join("");
@@ -1467,6 +1577,7 @@
           state.room = {};
           state.isHost = false;
           state.playerId = null;
+          state.sessionId = null;  // discard session — user intentionally left
           target = "home";
         }
 
@@ -1570,6 +1681,7 @@
     function enterRoom(response) {
       state.playerId = response.playerId;
       state.isHost = Boolean(response.isHost);
+      state.sessionId = response.sessionId || null;
       state.room = response.room;
       preloadAdminConfig();
       renderLobby();
@@ -1791,7 +1903,7 @@
         state.game.solved = true;
         const g = response.guessesUsed;
         $("solvedSubtitle").textContent = `Solved in ${g} guess${g === 1 ? "" : "es"} · Waiting for the round to finish…`;
-        showScreen("solved");
+        showSolveOverlay(true, g, () => showScreen("solved"));
         return;
       }
 
@@ -1800,6 +1912,7 @@
       if (state.game.currentRow >= state.game.maxGuesses) {
         state.game.locked = true;
         $("hintBox").textContent = "No guesses left. Waiting for the round to finish.";
+        showSolveOverlay(false, state.game.maxGuesses, () => {});
       }
     }
 
@@ -1948,8 +2061,27 @@
     });
 
     socket.on("game:timerTick", ({ remaining }) => updateTimer(remaining));
-    socket.on("game:roundEnd", renderRoundEnd);
-    socket.on("game:sessionEnd", renderSessionEnd);
+    socket.on("game:roundEnd", (payload) => { $("solveOverlay").classList.add("hidden"); renderRoundEnd(payload); });
+    socket.on("game:sessionEnd", (payload) => { $("solveOverlay").classList.add("hidden"); renderSessionEnd(payload); });
+
+    // ── Auto-rejoin after socket reconnect ───────────────────────────────────
+    // socket.io fires "connect" on every (re)connection. On the first connect
+    // state.sessionId is null so nothing happens. On a reconnect (e.g. mobile
+    // network blip) we re-send the session token so the server can swap the
+    // old dead socket.id for the new one — this restores host authority and
+    // lets events like game:endRound succeed again.
+    socket.on("connect", () => {
+      if (!state.sessionId || !state.room?.code) return; // first connect or already home
+      socket.emit("room:rejoin", { code: state.room.code, sessionId: state.sessionId }, (res) => {
+        if (!res?.ok) return; // session expired or room closed — stay in current screen
+        state.playerId = socket.id;
+        state.isHost  = res.isHost;
+        state.room    = res.room;
+        // Refresh host-only UI for whatever screen we're on
+        $("endRoundBtn").classList.toggle("hidden", !state.isHost);
+        if (state.screen === "lobby") renderLobby();
+      });
+    });
 
     initControls();
     renderBoard();

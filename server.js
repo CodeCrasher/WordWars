@@ -472,7 +472,7 @@ io.on("connection", (socket) => {
     socket.data.roomCode = code;
     socket.join(code);
 
-    callback?.({ ok: true, room: getRoomSummary(room), playerId: socket.id, isHost: true });
+    callback?.({ ok: true, room: getRoomSummary(room), playerId: socket.id, isHost: true, sessionId: host.sessionId });
     socket.emit("room:created", { room: getRoomSummary(room), playerId: socket.id });
   });
 
@@ -496,8 +496,36 @@ io.on("connection", (socket) => {
     socket.join(code);
     touchRoom(room);
 
-    callback?.({ ok: true, room: getRoomSummary(room), playerId: socket.id, isHost: socket.id === room.hostId });
+    callback?.({ ok: true, room: getRoomSummary(room), playerId: socket.id, isHost: socket.id === room.hostId, sessionId: player.sessionId });
     emitPlayers(room, "room:playerJoined");
+  });
+
+  // Player reconnects mid-game with a session token to reclaim their slot.
+  socket.on("room:rejoin", ({ code, sessionId } = {}, callback) => {
+    const room = rooms.get(String(code || "").trim().toUpperCase());
+    if (!room) return callback?.({ ok: false, error: "Room not found." });
+
+    // Locate the existing player by their immutable session token
+    const existing = Array.from(room.players.values()).find((p) => p.sessionId === sessionId);
+    if (!existing) return callback?.({ ok: false, error: "Session not recognised." });
+
+    const wasHost = existing.id === room.hostId;
+
+    // Swap old socket ID → new socket ID
+    room.players.delete(existing.id);
+    existing.id = socket.id;
+    existing.connected = true;
+    existing.active = true;
+    room.players.set(socket.id, existing);
+
+    if (wasHost) room.hostId = socket.id;
+
+    socket.data.roomCode = room.code;
+    socket.join(room.code);
+    touchRoom(room);
+
+    emitPlayers(room, "room:playerJoined");
+    callback?.({ ok: true, isHost: wasHost, room: getRoomSummary(room) });
   });
 
   // Host starts the next round immediately, optionally replacing the next word/category/hint.
