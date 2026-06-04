@@ -162,8 +162,21 @@
       display: block;
     }
 
+    /* On home: hide brand, keep only the theme toggle */
+    .app:has(#homeScreen.active) .topbar {
+      background: transparent;
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+      justify-content: flex-end;
+    }
+
+    .app:has(#homeScreen.active) .topbar .brand {
+      display: none;
+    }
+
     .home {
-      min-height: calc(100vh - 150px);
+      min-height: 100vh;
       flex-direction: column;
       align-items: center;
       justify-content: center;
@@ -1274,12 +1287,11 @@
       state.screen = name;
       document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("active"));
       $(`${name}Screen`).classList.add("active");
-      if (!_histNavFlag) {
-        // Locked screens use replaceState so the entry before them stays in history;
-        // navigable screens push a new entry so back lands there.
-        LOCKED_SCREENS.has(name)
-          ? history.replaceState({ screen: name }, "")
-          : history.pushState({ screen: name }, "");
+      // Only push history for navigable (non-locked) screens.
+      // Locked screens (game/solved/roundEnd) are invisible to history so they
+      // never appear as a back-button target and never replace a good entry.
+      if (!_histNavFlag && !LOCKED_SCREENS.has(name)) {
+        history.pushState({ screen: name }, "");
       }
       _histNavFlag = false;
     }
@@ -1376,24 +1388,36 @@
 
       // ── Browser back-button support ─────────────────────────────────────────
       window.addEventListener("popstate", function (e) {
-        // Block back navigation while a game is active
+        // ① Hit the barrier (or no state) → can't go further back than home
+        if (!e.state || e.state.barrier) {
+          history.pushState({ screen: "home" }, "");
+          return; // stay silently on home
+        }
+
+        // ② Game in progress → block back and restore the current history entry
         if (LOCKED_SCREENS.has(state.screen)) {
           history.pushState({ screen: state.screen }, "");
           showToast("Game in progress — back navigation is disabled.");
           return;
         }
 
-        // Clean up when leaving the lobby or session-end screen
+        // ③ Determine target; if it somehow resolved to a locked screen
+        //    (shouldn't normally happen) redirect to home for safety
+        let target = e.state.screen || "home";
+        if (LOCKED_SCREENS.has(target)) target = "home";
+
+        // ④ Leaving an active room (lobby or session-end) → clean up and
+        //    always land on home, not a potentially stale previous screen
         if (state.screen === "lobby" || state.screen === "sessionEnd") {
           socket.disconnect();
           socket.connect();
           state.room = {};
           state.isHost = false;
           state.playerId = null;
+          target = "home";
         }
 
-        const target = e.state?.screen || "home";
-        _histNavFlag = true; // prevent showScreen from pushing a new entry
+        _histNavFlag = true; // prevent showScreen from pushing a duplicate entry
         showScreen(target);
       });
     }
@@ -1878,8 +1902,11 @@
     renderBoard();
     renderKeyboard();
 
-    // Seed the initial history entry so popstate always has a state to read
-    history.replaceState({ screen: "home" }, "");
+    // Seed history with two entries:
+    //   [0] barrier  – hitting this means "no further back", stay on home
+    //   [1] home     – the real starting point; current entry on load
+    history.replaceState({ barrier: true }, "");
+    history.pushState({ screen: "home" }, "");
 
   </script>
 </body>
