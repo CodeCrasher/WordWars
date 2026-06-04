@@ -107,14 +107,19 @@
     .logo {
       display: grid;
       place-items: center;
-      width: 42px;
-      height: 42px;
+      width: 48px;
+      height: 48px;
+      overflow: hidden;
       border-radius: 12px;
-      background: var(--accent);
-      color: #ffffff;
-      font-weight: 900;
-      box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 30%, transparent);
       flex: 0 0 auto;
+    }
+
+    .logo img {
+      width: 115%;
+      height: 115%;
+      object-fit: cover;
+      display: block;
+      margin: -7.5%;
     }
 
     h1,
@@ -665,16 +670,20 @@
     .hero-logo {
       display: grid;
       place-items: center;
-      width: 64px;
-      height: 64px;
-      border-radius: 12px;
-      background: var(--accent);
-      color: #ffffff;
-      font-weight: 900;
-      font-size: 1.8rem;
-      box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 30%, transparent);
+      width: 140px;
+      height: 140px;
       margin: 0 auto 16px;
+      overflow: hidden;
+      border-radius: 28px;
       animation: pulse 3s ease infinite;
+    }
+
+    .hero-logo img {
+      width: 115%;
+      height: 115%;
+      object-fit: cover;
+      display: block;
+      margin: -7.5%;
     }
 
     .hero-title {
@@ -911,7 +920,7 @@
   <div class="app" id="app" data-theme="light">
     <header class="topbar">
       <div class="brand">
-        <div class="logo">W</div>
+        <div class="logo"><img src="WordWars.png" alt="WordWars"></div>
         <div>
           <h1>WordWars</h1>
           <p class="subtitle">Private-room competitive Wordle for fast fingers and sharper guesses.</p>
@@ -924,7 +933,7 @@
       <section class="screen home active" id="homeScreen">
         <div class="home-content">
           <div class="hero-block">
-            <div class="hero-logo">W</div>
+            <div class="hero-logo"><img src="WordWars.png" alt="WordWars"></div>
             <p class="hero-title">WordWars</p>
             <p class="hero-sub">Host-controlled • Competitive • Real-time</p>
             <div class="feature-pills">

@@ -1,5 +1,7 @@
 # WordWars
 
+<img src="WordWars.png" alt="WordWars logo" width="120">
+
 Competitive multiplayer Wordle — the host sets the word and category,
 players race to solve it. Scoring is based on speed and guess
 efficiency. Built with Node.js, Express, and Socket.io.
