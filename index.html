@@ -542,11 +542,20 @@
       font-weight: 900;
       padding: 0 6px;
       transition: background 200ms ease, color 200ms ease, opacity 200ms ease, border-color 200ms ease;
+      touch-action: manipulation;
     }
 
     .key.wide {
       width: 72px;
       font-size: 0.8rem;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    .key--enter {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: clip;
     }
 
     .key.green {
@@ -986,11 +995,54 @@
         width: clamp(20px, calc((100vw - 122px) / 10), 42px);
         height: 44px;
         font-size: 0.82rem;
+        touch-action: manipulation;
+        flex: 1;
+        border-radius: 6px;
       }
 
       .key.wide {
         /* Derived: (container - 8 gaps - 7 regular keys) / 2 = 15vw - 15.3px */
         width: clamp(30px, calc(15vw - 15.3px), 72px);
+      }
+
+      .key-row {
+        gap: 4px;
+        padding: 0 2px;
+      }
+
+      .keyboard {
+        width: 100%;
+        max-width: 100vw;
+        padding: 0 4px;
+        box-sizing: border-box;
+      }
+
+      .key--enter {
+        min-width: 56px;
+        font-size: 0.7rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        padding: 0 6px;
+        flex: 1.8;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: clip;
+      }
+
+      .key--backspace {
+        min-width: 44px;
+        flex: 1.5;
+        font-size: 1rem;
+      }
+    }
+
+    @media (max-width: 360px) {
+      .key--enter {
+        font-size: 0;
+      }
+      .key--enter::after {
+        content: "↵";
+        font-size: 1.1rem;
       }
     }
   </style>
@@ -1830,8 +1882,8 @@
       $("keyboard").innerHTML = rows.map((letters, index) => {
         const keys = letters.split("").map((letter) => `<button class="key ${state.game.keyState[letter] || ""}" data-key="${letter}">${letter}</button>`);
         if (index === 2) {
-          keys.unshift(`<button class="key wide" data-key="ENTER">ENTER</button>`);
-          keys.push(`<button class="key wide" data-key="BACKSPACE">⌫</button>`);
+          keys.unshift(`<button class="key wide key--enter" data-key="ENTER">ENTER</button>`);
+          keys.push(`<button class="key wide key--backspace" data-key="BACKSPACE">⌫</button>`);
         }
         return `<div class="key-row">${keys.join("")}</div>`;
       }).join("");
