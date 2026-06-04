@@ -871,6 +871,17 @@
       opacity: 0.6;
     }
 
+    .form-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px 0 40px;
+    }
+
+    .form-screen .home-panel {
+      animation: fadeUp 300ms ease-out both;
+    }
+
     .mobile-tap-hint { display: none; }
 
     /* Off-screen capture input — never visible, just focusable */
@@ -987,65 +998,88 @@
               </div>
             </div>
 
-          <form class="form-grid hidden" id="createForm">
-            <div class="field">
-              <label for="hostName">Host Name</label>
-              <input id="hostName" maxlength="16" value="Host123" autocomplete="off">
-            </div>
-            <div class="field">
-              <label for="adminPin">Admin PIN</label>
-              <input id="adminPin" type="password" value="1234" autocomplete="off">
-            </div>
-            <div class="field">
-              <label for="wordInput">Word of the Day</label>
-              <input id="wordInput" maxlength="5" placeholder="CRANE" autocomplete="off">
-              <span class="word-hint" id="wordInputHint"></span>
-            </div>
-            <div class="field">
-              <label for="customCodeInput">Room Code</label>
-              <input id="customCodeInput" maxlength="6" placeholder="Leave blank for random" autocomplete="off" style="text-transform:uppercase">
-              <span class="word-hint" id="customCodeHint">6 chars — leave blank for random</span>
-            </div>
-            <div class="field">
-              <label for="timerInput">Round Timer</label>
-              <select id="timerInput">
-                <option value="60">60 seconds</option>
-                <option value="120">2 minutes</option>
-                <option value="180" selected>3 minutes</option>
-                <option value="300">5 minutes</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="roundsInput">Rounds</label>
-              <input id="roundsInput" type="number" min="1" max="10" value="1">
-            </div>
-            <div class="field full">
-              <label for="hintInput">Hint After 3 Failed Attempts</label>
-              <textarea id="hintInput" maxlength="140" placeholder="Optional hint"></textarea>
-            </div>
-            <div class="field full">
-              <button class="btn primary" type="submit" style="width:100%">Create Private Room</button>
-              <div class="error" id="createError"></div>
-            </div>
-          </form>
-
-          <form class="form-grid hidden" id="joinForm">
-            <div class="field">
-              <label for="joinName">Display Name</label>
-              <input id="joinName" maxlength="16" placeholder="Player7" autocomplete="off">
-            </div>
-            <div class="field">
-              <label for="joinCode">Room Code</label>
-              <input id="joinCode" maxlength="6" placeholder="XK92PL" autocomplete="off">
-            </div>
-            <div class="field full">
-              <button class="btn primary" type="submit">Join Room</button>
-              <div class="error" id="joinError"></div>
-            </div>
-          </form>
           </div>
         </div>
         <footer class="home-footer">Made with ☕ for word nerds</footer>
+      </section>
+
+      <section class="screen" id="createScreen">
+        <div class="form-screen">
+          <div class="home-panel">
+            <div>
+              <h2>Create a Room</h2>
+              <p class="subtitle">Host-controlled private room — you pick the word.</p>
+            </div>
+            <form class="form-grid" id="createForm">
+              <div class="field">
+                <label for="hostName">Host Name</label>
+                <input id="hostName" maxlength="16" value="Host123" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="adminPin">Admin PIN</label>
+                <input id="adminPin" type="password" value="1234" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="wordInput">Word of the Day</label>
+                <input id="wordInput" maxlength="5" placeholder="CRANE" autocomplete="off">
+                <span class="word-hint" id="wordInputHint"></span>
+              </div>
+              <div class="field">
+                <label for="customCodeInput">Room Code</label>
+                <input id="customCodeInput" maxlength="6" placeholder="Leave blank for random" autocomplete="off" style="text-transform:uppercase">
+                <span class="word-hint" id="customCodeHint">6 chars — leave blank for random</span>
+              </div>
+              <div class="field">
+                <label for="timerInput">Round Timer</label>
+                <select id="timerInput">
+                  <option value="60">60 seconds</option>
+                  <option value="120">2 minutes</option>
+                  <option value="180" selected>3 minutes</option>
+                  <option value="300">5 minutes</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="roundsInput">Rounds</label>
+                <input id="roundsInput" type="number" min="1" max="10" value="1">
+              </div>
+              <div class="field full">
+                <label for="hintInput">Hint After 3 Failed Attempts</label>
+                <textarea id="hintInput" maxlength="140" placeholder="Optional hint"></textarea>
+              </div>
+              <div class="field full">
+                <button class="btn primary" type="submit" style="width:100%">Create Private Room</button>
+                <div class="error" id="createError"></div>
+              </div>
+            </form>
+            <button class="btn ghost" id="backFromCreate" type="button">← Back</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" id="joinScreen">
+        <div class="form-screen">
+          <div class="home-panel">
+            <div>
+              <h2>Join a Room</h2>
+              <p class="subtitle">Enter the 6-character room code to jump in.</p>
+            </div>
+            <form class="form-grid" id="joinForm">
+              <div class="field">
+                <label for="joinName">Display Name</label>
+                <input id="joinName" maxlength="16" placeholder="Player7" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="joinCode">Room Code</label>
+                <input id="joinCode" maxlength="6" placeholder="XK92PL" autocomplete="off">
+              </div>
+              <div class="field full">
+                <button class="btn primary" type="submit" style="width:100%">Join Room</button>
+                <div class="error" id="joinError"></div>
+              </div>
+            </form>
+            <button class="btn ghost" id="backFromJoin" type="button">← Back</button>
+          </div>
+        </div>
       </section>
 
       <section class="screen" id="lobbyScreen">
@@ -1364,15 +1398,10 @@
         $("themeToggle").textContent = next === "dark" ? "☾" : "☀";
       });
 
-      $("showCreate").addEventListener("click", () => {
-        $("createForm").classList.remove("hidden");
-        $("joinForm").classList.add("hidden");
-      });
-
-      $("showJoin").addEventListener("click", () => {
-        $("joinForm").classList.remove("hidden");
-        $("createForm").classList.add("hidden");
-      });
+      $("showCreate").addEventListener("click", () => showScreen("create"));
+      $("showJoin").addEventListener("click", () => showScreen("join"));
+      $("backFromCreate").addEventListener("click", () => showScreen("home"));
+      $("backFromJoin").addEventListener("click", () => showScreen("home"));
 
       $("copyCodeBtn").addEventListener("click", async () => {
         try {
