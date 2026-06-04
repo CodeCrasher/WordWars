@@ -1400,6 +1400,16 @@
       text-align: center; padding: 4px 0 8px;
     }
     .chooser-indicator strong { color: var(--accent); }
+    .badge--chooser {
+      background: var(--accent-2);
+      color: #fff;
+      font-size: 0.68rem;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 999px;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
     @media (max-width: 480px) {
       .chooser-form { padding: 16px; }
       .btn-leave--game { font-size: 0; padding: 6px 8px; }
@@ -1429,14 +1439,14 @@
             <p class="hero-sub">Host-controlled • Competitive • Real-time</p>
             <div class="feature-pills">
               <span class="feature-pill">⚡ Fastest finger wins</span>
-              <span class="feature-pill">🎯 Host picks the word</span>
+              <span class="feature-pill">🎯 Every player picks a word</span>
               <span class="feature-pill">🏆 Live leaderboard</span>
             </div>
           </div>
           <div class="home-panel">
             <div>
               <h2>Start a match</h2>
-              <p class="subtitle">Create a host-controlled room or join one with a 6-character code.</p>
+              <p class="subtitle">Host a room or join one with a 6-character code.</p>
             </div>
             <div class="live-indicator">
               <span class="live-dot"></span>
@@ -1451,15 +1461,19 @@
               <div class="how-steps">
                 <div class="how-step">
                   <div class="step-num">1</div>
-                  <div class="step-text">Host creates a private room and picks the word</div>
+                  <div class="step-text">Host creates a private room and shares the 6-character code</div>
                 </div>
                 <div class="how-step">
                   <div class="step-num">2</div>
-                  <div class="step-text">Share the 6-character room code with friends</div>
+                  <div class="step-text">Each round, one player picks the secret word and category</div>
                 </div>
                 <div class="how-step">
                   <div class="step-num">3</div>
-                  <div class="step-text">Everyone guesses simultaneously — fastest correct solve wins</div>
+                  <div class="step-text">Everyone else races to guess it — fastest solver wins the most points</div>
+                </div>
+                <div class="how-step">
+                  <div class="step-num">4</div>
+                  <div class="step-text">The word picker earns points based on how hard the word was to crack</div>
                 </div>
               </div>
             </div>
@@ -1474,7 +1488,7 @@
           <div class="home-panel">
             <div>
               <h2>Create a Room</h2>
-              <p class="subtitle">Host-controlled private room — you pick the word.</p>
+              <p class="subtitle">Set up your room. Players join with the code. Each round, someone new picks the word.</p>
             </div>
             <form class="form-grid" id="createForm">
               <div class="field">
@@ -1558,7 +1572,7 @@
           <aside class="panel" id="adminPanel">
             <div class="panel-head">
               <div>
-                <h2>Host Controls</h2>
+                <h2>Game Settings</h2>
                 <p class="subtitle">Start the session when everyone's in.</p>
               </div>
             </div>
@@ -1671,7 +1685,7 @@
               <div class="timer" id="timerText">3:00</div>
             </div>
             <div class="board" id="board"></div>
-            <div class="hint-box" id="hintBox">Hint unlocks after 3 failed attempts.</div>
+            <div class="hint-box" id="hintBox">Hint available after 3 failed guesses.</div>
             <div class="mobile-tap-hint" id="mobileTapHint">⌨️ Tap here to type</div>
             <div class="keyboard" id="keyboard"></div>
             <input id="mobileCapture" class="mobile-capture" type="text"
@@ -1684,7 +1698,7 @@
             <div class="panel-head">
               <div>
                 <h2>Live Board</h2>
-                <p class="subtitle">Solved players appear as the round unfolds.</p>
+                <p class="subtitle">Live standings — first to solve scores highest.</p>
               </div>
             </div>
             <div class="leader-list" id="liveLeaderboard"></div>
@@ -1712,12 +1726,16 @@
           <div class="panel-head">
             <div>
               <h2>Round Complete</h2>
-              <p class="subtitle" id="roundEndSubtitle">Scores are locked.</p>
+              <p class="subtitle" id="roundEndSubtitle">Round complete.</p>
             </div>
             <span class="badge" id="wordReveal">WORD</span>
           </div>
           <div class="score-list" id="roundLeaderboard"></div>
-          <p class="subtitle" id="nextRoundNote" style="margin-top:14px;text-align:center;">Next round starts automatically…</p>
+          <p class="subtitle" id="nextRoundNote" style="margin:14px 0;text-align:center;">Next round starts in a moment — the next player will pick the word.</p>
+          <div id="nextRoundCta" style="text-align:center;">
+            <button class="btn primary" id="nextRoundBtn" type="button" style="width:100%">Next Round →</button>
+            <p class="muted" style="margin-top:8px;">The next player will choose the word.</p>
+          </div>
         </div>
       </section>
 
@@ -1726,14 +1744,14 @@
           <div class="panel-head">
             <div>
               <h2>Final Podium</h2>
-              <p class="subtitle">Cumulative scores across all rounds.</p>
+              <p class="subtitle">Final scores — every player picked a word and guessed.</p>
             </div>
           </div>
           <div class="podium" id="podium"></div>
           <div class="score-list" id="finalScores"></div>
           <div class="home-actions" style="margin-top:18px;">
             <button class="btn primary" id="playAgainBtn">Play Again</button>
-            <button class="btn" id="newSessionBtn">New Session</button>
+            <button class="btn" id="newSessionBtn">New Game</button>
           </div>
         </div>
       </section>
@@ -1899,6 +1917,7 @@
       $("createForm").addEventListener("submit", createRoom);
       $("joinForm").addEventListener("submit", joinRoom);
       $("adminForm").addEventListener("submit", startFromAdmin);
+      $("nextRoundBtn").addEventListener("click", nextRound);
       $("endRoundBtn").addEventListener("click", endRound);
       $("playAgainBtn").addEventListener("click", () => showScreen("home"));
       $("newSessionBtn").addEventListener("click", () => window.location.reload());
@@ -2063,13 +2082,13 @@
       if (!state.room) return;
       $("roomCodeText").textContent = state.room.code;
       $("lobbyTitle").textContent = state.isHost ? "Host Lobby" : "Player Lobby";
-      $("lobbyStatus").textContent = state.isHost ? "Share the code, tune the settings, then start when ready." : "Waiting for the host to start.";
+      $("lobbyStatus").textContent = state.isHost ? "Share the room code. Start when everyone has joined." : "Waiting for the host to start the game.";
       $("hostBadge").textContent = state.isHost ? "Host" : "Player";
       $("adminPanel").classList.toggle("hidden", !state.isHost);
 
       const roundsLabel = state.room.totalRounds > 0
-        ? `${state.room.totalRounds} round${state.room.totalRounds === 1 ? "" : "s"}`
-        : "2× players in rounds";
+        ? `Rounds: ${state.room.totalRounds}`
+        : `Rounds: 2× players`;
       $("configBadges").innerHTML = [
         `${formatTime(state.room.roundTime)} timer`,
         roundsLabel,
@@ -2112,6 +2131,16 @@
       });
     }
 
+    function nextRound() {
+      $("nextRoundCta").classList.add("hidden");
+      socket.emit("game:start", { roundTime: state.room?.roundTime || state.game.roundTime }, (response) => {
+        if (!response?.ok) {
+          showToast(response?.error || "Could not start next round.");
+          $("nextRoundCta").classList.remove("hidden");
+        }
+      });
+    }
+
     function resetGameBoard(payload) {
       state.game = {
         round: payload.round,
@@ -2149,7 +2178,7 @@
       } else {
         ind.style.display = "none";
       }
-      $("hintBox").textContent = payload.hintAvailable ? "Hint unlocks after 3 failed attempts." : "No hint for this round.";
+      $("hintBox").textContent = payload.hintAvailable ? "Hint available after 3 failed guesses." : "No hint this round.";
       $("endRoundBtn").classList.toggle("hidden", !state.isHost);
       $("liveLeaderboard").innerHTML = `<div class="muted">No solves yet.</div>`;
       renderBoard();
@@ -2249,7 +2278,7 @@
       if (response.solved) {
         state.game.solved = true;
         const g = response.guessesUsed;
-        $("solvedSubtitle").textContent = `Solved in ${g} guess${g === 1 ? "" : "es"} · Waiting for the round to finish…`;
+        $("solvedSubtitle").textContent = `${g} guess${g === 1 ? "" : "es"} — Solved! Waiting for other players to finish.`;
         showSolveOverlay(true, g, () => showScreen("solved"));
         return;
       }
@@ -2258,7 +2287,7 @@
       state.game.currentCol = 0;
       if (state.game.currentRow >= state.game.maxGuesses) {
         state.game.locked = true;
-        $("hintBox").textContent = "No guesses left. Waiting for the round to finish.";
+        $("hintBox").textContent = "Out of guesses. Waiting for the round to end.";
         showSolveOverlay(false, state.game.maxGuesses, () => {});
       }
     }
@@ -2298,33 +2327,48 @@
     }
 
     function renderRoundEnd(payload) {
-      $("roundEndSubtitle").textContent = `Round ${payload.round}/${payload.totalRounds} ended by ${payload.reason}.`;
+      const reasonMap = {
+        "all-solved":   "Everyone solved it!",
+        "timer":        "Time's up!",
+        "host":         "Round ended by host.",
+        "chooser-left": "The word picker left — round ended early.",
+        "complete":     "Round complete."
+      };
+      const reasonText = reasonMap[payload.reason] || "Round complete.";
+      $("roundEndSubtitle").textContent =
+        `Round ${payload.round}/${payload.totalRounds} — ${reasonText}`;
       $("wordReveal").textContent = payload.word;
-      $("roundLeaderboard").innerHTML = payload.leaderboard.map((entry, index) => {
-        const detail = entry.isChooser
+      $("roundLeaderboard").innerHTML = payload.leaderboard.map((player, index) => {
+        const isChooser = (player.isChooser === true) ||
+                          (player.id === payload.chooserId);
+        const chooserBadge = isChooser
+          ? `<span class="badge badge--chooser">Word Picker</span>`
+          : "";
+        const detail = isChooser
           ? "Picked the word this round"
-          : entry.solved ? `${formatTime(entry.time)} · ${entry.guessesUsed} guesses` : "Did not solve";
-        const breakdownLine = entry.isChooser
-          ? `Chooser bonus ${entry.breakdown.chooserBonus ?? entry.score}`
-          : `Base ${entry.breakdown.base} + Time ${entry.breakdown.timeBonus} + Guess ${entry.breakdown.guessBonus}`;
+          : player.solved ? `${formatTime(player.time)} · ${player.guessesUsed} guesses` : "Did not solve";
+        const breakdownLine = isChooser
+          ? `Chooser bonus ${player.breakdown.chooserBonus ?? player.score}`
+          : `Base ${player.breakdown.base} + Time ${player.breakdown.timeBonus} + Guess ${player.breakdown.guessBonus}`;
         return `
         <div class="score-row">
           <div>
-            <strong>${index + 1}. ${escapeHtml(entry.name)}${entry.isChooser ? " 🎯" : ""}</strong>
+            <strong>${index + 1}. ${escapeHtml(player.name)}${chooserBadge}</strong>
             <div class="muted">${detail}</div>
             <div class="muted">${breakdownLine}</div>
           </div>
           <div style="text-align:right;">
-            <strong>${entry.score}</strong>
-            <div class="muted">${entry.cumulativeScore} total</div>
+            <strong>${player.score}</strong>
+            <div class="muted">${player.cumulativeScore} total</div>
           </div>
         </div>`;
       }).join("");
 
       const hasNext = payload.round < payload.totalRounds;
       $("nextRoundNote").textContent = hasNext
-        ? "Next round starts automatically…"
+        ? "Next round starts in a moment — the next player will pick the word."
         : "Final scores coming up…";
+      $("nextRoundCta").classList.toggle("hidden", !hasNext || !state.isHost);
       showScreen("roundEnd");
     }
 
