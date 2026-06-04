@@ -459,6 +459,17 @@
       border-color: var(--accent-2);
     }
 
+    .tile.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+      animation: tileCursor 1s ease-in-out infinite;
+    }
+
+    @keyframes tileCursor {
+      0%, 100% { border-color: var(--accent); }
+      50%       { border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+    }
+
     .tile.reveal {
       transform: rotateX(360deg);
     }
@@ -1594,11 +1605,13 @@
 
     function renderBoard() {
       const board = $("board");
+      const canType = !state.game.locked && !state.game.solved && state.game.currentRow < state.game.maxGuesses;
       board.innerHTML = state.game.rows.map((row, rowIndex) => `
         <div class="board-row">
           ${row.map((letter, colIndex) => {
             const color = state.game.feedback[rowIndex][colIndex];
-            const classes = ["tile", letter ? "filled" : "", color || ""].filter(Boolean).join(" ");
+            const isCursor = canType && rowIndex === state.game.currentRow && colIndex === state.game.currentCol;
+            const classes = ["tile", isCursor ? "active" : "", letter ? "filled" : "", color || ""].filter(Boolean).join(" ");
             return `<div class="${classes}" data-row="${rowIndex}" data-col="${colIndex}">${escapeHtml(letter)}</div>`;
           }).join("")}
         </div>

@@ -47,9 +47,8 @@ app.get("/api/validate-word/:word", async (req, res) => {
   }
   try {
     const valid = await isValidWord(word);
-    if (!valid) {
-      return res.json({ valid: false, reason: "not-a-common-word" });
-    }
+    if (valid === null) return res.json({ valid: false, reason: "api-error" });
+    if (!valid) return res.json({ valid: false, reason: "not-a-common-word" });
     res.json({ valid: true });
   } catch {
     res.json({ valid: false, reason: "api-error" });
@@ -81,9 +80,7 @@ async function isValidWord(word) {
     });
 
     if (!response.ok) {
-      wordCache.set(cacheKey, false);
-      if (wordCache.size > CACHE_MAX_SIZE) wordCache.delete(wordCache.keys().next().value);
-      return false;
+      return null; // HTTP error from MW API — unknown state, don't cache
     }
 
     const data = await response.json();
@@ -122,7 +119,7 @@ async function isValidWord(word) {
 
   } catch (err) {
     console.error("MW API error:", err.message);
-    return false;
+    return null; // network/timeout error — unknown state, don't cache
   }
 }
 
@@ -564,7 +561,7 @@ io.on("connection", (socket) => {
   });
 
   // Player submits a guess; validation, feedback, solving, and scoring all happen server-side.
-  socket.on("game:guess", (payload = {}, callback) => {
+  socket.on("game:guess", async (payload = {}, callback) => {
     const room = getRoomForSocket(socket);
     const player = room ? findPlayer(room, socket.id) : null;
     const guess = normalizeWord(payload.guess);
@@ -575,6 +572,13 @@ io.on("connection", (socket) => {
     if (player.solved) return callback?.({ ok: false, error: "You already solved this round." });
     if (player.guesses.length >= MAX_GUESSES) return callback?.({ ok: false, error: "No guesses remaining." });
     if (!isFiveLetterWord(guess)) return callback?.({ ok: false, error: "Guess must be exactly 5 alphabetic characters." });
+
+    // Dictionary check — only when MW_API_KEY is configured.
+    // null means the API was unreachable; fail-open so the game keeps running.
+    if (MW_API_KEY) {
+      const valid = await isValidWord(guess);
+      if (valid === false) return callback?.({ ok: false, error: "Not a valid word. Try again." });
+    }
 
     const answer = room.currentRoundConfig.word;
     const feedback = makeFeedback(guess, answer);
