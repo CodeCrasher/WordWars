@@ -424,7 +424,6 @@ io.on("connection", (socket) => {
     const customCategory = String(payload.customCategory || "").trim().slice(0, 32);
     const hint = String(payload.hint || "").trim().slice(0, 140);
     const roundTime = Number(payload.roundTime);
-    const totalRounds = Number(payload.totalRounds);
 
     const customCode = String(payload.customCode || "").trim().toUpperCase();
 
@@ -457,7 +456,8 @@ io.on("connection", (socket) => {
         customCategory,
         hint,
         roundTime: [60, 120, 180, 300].includes(roundTime) ? roundTime : 180,
-        totalRounds: Number.isInteger(totalRounds) && totalRounds >= 1 && totalRounds <= 10 ? totalRounds : 1
+        totalRounds: 0,
+        // Will be calculated as 2x player count when session starts
       },
       currentRoundConfig: {
         word,
@@ -533,26 +533,26 @@ io.on("connection", (socket) => {
     const room = getRoomForSocket(socket);
     if (!assertHost(socket, room)) return callback?.({ ok: false, error: "Only the host can start a round." });
     if (room.status === "playing") return callback?.({ ok: false, error: "A round is already running." });
-    if (room.currentRound >= room.config.totalRounds) return callback?.({ ok: false, error: "The session has already ended." });
+    if (room.config.totalRounds > 0 && room.currentRound >= room.config.totalRounds) return callback?.({ ok: false, error: "The session has already ended." });
 
     const word = payload.word ? normalizeWord(payload.word) : room.currentRoundConfig.word;
     const category = payload.category ? String(payload.category).trim().slice(0, 32) : room.config.category;
     const hint = payload.hint !== undefined ? String(payload.hint || "").trim().slice(0, 140) : room.config.hint;
     const roundTime = Number(payload.roundTime || room.config.roundTime);
-    const totalRounds = Number(payload.totalRounds || room.config.totalRounds);
 
     if (!isFiveLetterWord(word)) return callback?.({ ok: false, error: "Word must be exactly 5 alphabetic characters." });
     const wordValid = await isValidWord(word);
     if (!wordValid) return callback?.({ ok: false, error: "Please choose a real English common noun, verb, or adjective. Proper nouns (names, places, brands) are not allowed." });
     if (![60, 120, 180, 300].includes(roundTime)) return callback?.({ ok: false, error: "Invalid round timer." });
-    if (!Number.isInteger(totalRounds) || totalRounds < room.currentRound + 1 || totalRounds > 10) {
-      return callback?.({ ok: false, error: "Round count must be between the current round and 10." });
-    }
+
+    // Calculate total rounds as 2x the number of active players
+    const activePlayers = Array.from(room.players.values())
+      .filter(p => p.active && p.connected);
+    room.config.totalRounds = Math.max(2, activePlayers.length * 2);
 
     room.config.category = category || "Custom";
     room.config.hint = hint;
     room.config.roundTime = roundTime;
-    room.config.totalRounds = totalRounds;
     startGameRound(room, { word, category: room.config.category, hint });
     callback?.({ ok: true });
   });
