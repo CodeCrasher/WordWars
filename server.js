@@ -13,9 +13,8 @@ const WORD_LENGTH = 5;
 
 const MW_API_KEY = process.env.MW_API_KEY;
 if (!MW_API_KEY) {
-  console.warn("WARNING: MW_API_KEY is not set. Word validation will reject all words.");
+  console.warn("WARNING: MW_API_KEY not set. Word validation will reject all words.");
 }
-
 const wordCache = new Map();
 const CACHE_MAX_SIZE = 2000;
 
@@ -42,19 +41,14 @@ app.get("/health", (_req, res) => {
 
 app.get("/api/validate-word/:word", async (req, res) => {
   const word = String(req.params.word || "").trim().toUpperCase();
-  if (!isFiveLetterWord(word)) {
-    return res.json({ valid: false, reason: "not-five-letters" });
-  }
+  if (!isFiveLetterWord(word)) return res.json({ valid: false, reason: "not-five-letters" });
   try {
     const valid = await isValidWord(word);
-    if (valid === null) return res.json({ valid: false, reason: "api-error" });
-    if (!valid) return res.json({ valid: false, reason: "not-a-common-word" });
-    res.json({ valid: true });
+    res.json(valid ? { valid: true } : { valid: false, reason: "not-a-common-word" });
   } catch {
     res.json({ valid: false, reason: "api-error" });
   }
 });
-
 
 function normalizeWord(word) {
   return String(word || "").trim().toUpperCase();
@@ -66,60 +60,40 @@ function isFiveLetterWord(word) {
 
 async function isValidWord(word) {
   if (!MW_API_KEY) return false;
-
   const normalized = normalizeWord(word).toLowerCase();
-
-  const cacheKey = normalized;
-  if (wordCache.has(cacheKey)) return wordCache.get(cacheKey);
+  if (wordCache.has(normalized)) return wordCache.get(normalized);
 
   try {
     const url = `https://www.dictionaryapi.com/api/v3/references/collegiate/json/${encodeURIComponent(normalized)}?key=${MW_API_KEY}`;
-
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(5000)
-    });
-
-    if (!response.ok) {
-      return null; // HTTP error from MW API — unknown state, don't cache
-    }
+    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!response.ok) { wordCache.set(normalized, false); return false; }
 
     const data = await response.json();
-
-    if (!Array.isArray(data) || data.length === 0) {
-      wordCache.set(cacheKey, false);
-      if (wordCache.size > CACHE_MAX_SIZE) wordCache.delete(wordCache.keys().next().value);
-      return false;
-    }
-    if (typeof data[0] === "string") {
-      wordCache.set(cacheKey, false);
-      if (wordCache.size > CACHE_MAX_SIZE) wordCache.delete(wordCache.keys().next().value);
+    if (!Array.isArray(data) || data.length === 0 || typeof data[0] === "string") {
+      wordCache.set(normalized, false);
       return false;
     }
 
     const REJECTED_LABELS = new Set([
-      "biographical name",
-      "geographical name",
-      "trademark",
-      "abbreviation",
-      "symbol"
+      "biographical name", "geographical name", "trademark",
+      "abbreviation", "symbol"
     ]);
 
-    const hasValidEntry = data.some(entry => {
+    const valid = data.some(entry => {
       if (typeof entry !== "object" || !entry.fl) return false;
-      const fl = entry.fl.toLowerCase();
-      if (REJECTED_LABELS.has(fl)) return false;
+      if (REJECTED_LABELS.has(entry.fl.toLowerCase())) return false;
       const hw = entry?.hwi?.hw || "";
       if (hw && hw[0] === hw[0].toUpperCase() && hw[0] !== hw[0].toLowerCase()) return false;
       return true;
     });
 
-    wordCache.set(cacheKey, hasValidEntry);
     if (wordCache.size > CACHE_MAX_SIZE) wordCache.delete(wordCache.keys().next().value);
-    return hasValidEntry;
+    wordCache.set(normalized, valid);
+    return valid;
 
   } catch (err) {
     console.error("MW API error:", err.message);
-    return null; // network/timeout error — unknown state, don't cache
+    return false;
   }
 }
 
@@ -154,6 +128,7 @@ function getPublicPlayers(room) {
     id: player.id,
     name: player.name,
     isHost: player.id === room.hostId,
+    isChooser: player.id === room.currentChooserId,
     active: player.active,
     connected: player.connected,
     cumulativeScore: player.cumulativeScore,
@@ -168,12 +143,13 @@ function getRoomSummary(room) {
     code: room.code,
     hostId: room.hostId,
     status: room.status,
-    category: room.config.category,
-    customCategory: room.config.customCategory,
     roundTime: room.config.roundTime,
     totalRounds: room.config.totalRounds,
     currentRound: room.currentRound,
     hintAvailable: Boolean(room.currentRoundConfig?.hint),
+    currentChooserId: room.currentChooserId,
+    waitingForWord: room.waitingForWord,
+    playerOrder: room.playerOrder || [],
     players: getPublicPlayers(room)
   };
 }
@@ -255,6 +231,39 @@ function calculateScore(room, player) {
   };
 }
 
+/*
+ * CHOOSER SCORING — points per guesser per round
+ * ─────────────────────────────────────────────
+ * Guesser solved in 1 guess   →   0 pts  (too easy)
+ * Guesser solved in 2 guesses →  100 pts
+ * Guesser solved in 3 guesses →  200 pts
+ * Guesser solved in 4 guesses →  300 pts
+ * Guesser solved in 5 guesses →  400 pts
+ * Guesser solved in 6 guesses →  500 pts
+ * Guesser failed entirely     →  500 pts
+ * Stump bonus (nobody solved,
+ *   2+ guessers)              → +300 pts flat
+ * Round cap                   → 1500 pts max
+ */
+function calculateChooserScore(room) {
+  const guessers = Array.from(room.players.values()).filter(
+    p => p.id !== room.currentChooserId && p.active
+  );
+  if (guessers.length === 0) return 0;
+
+  let total = 0;
+  for (const g of guessers) {
+    total += g.solved
+      ? Math.max(0, (g.guesses.length - 1) * 100)
+      : 500;
+  }
+
+  const nonesolve = guessers.every(g => !g.solved);
+  if (nonesolve && guessers.length >= 2) total += 300;
+
+  return Math.min(total, 1500);
+}
+
 function getLiveLeaderboard(room) {
   return Array.from(room.players.values())
     .filter((player) => player.solved)
@@ -282,6 +291,7 @@ function getRoundLeaderboard(room) {
       id: player.id,
       name: player.name,
       active: player.active,
+      isChooser: player.id === room.currentChooserId,
       solved: player.solved,
       time: player.solvedAt,
       guessesUsed: player.guesses.length,
@@ -322,12 +332,27 @@ function finishRound(room, reason = "complete") {
   room.status = "round-ended";
   touchRoom(room);
 
+  // Award chooser score BEFORE building leaderboard
+  const chooserPlayer = room.players.get(room.currentChooserId);
+  if (chooserPlayer) {
+    const pts = calculateChooserScore(room);
+    chooserPlayer.roundScore = pts;
+    chooserPlayer.cumulativeScore += pts;
+    chooserPlayer.breakdown = {
+      base: 0, timeRemaining: 0, timeBonus: 0,
+      unusedGuesses: 0, guessBonus: 0,
+      chooserBonus: pts, score: pts
+    };
+  }
+
   const leaderboard = getRoundLeaderboard(room);
   io.to(room.code).emit("game:roundEnd", {
     reason,
     word: room.currentRoundConfig.word,
     round: room.currentRound,
     totalRounds: room.config.totalRounds,
+    chooserId: room.currentChooserId,
+    chooserScore: chooserPlayer ? chooserPlayer.roundScore : 0,
     leaderboard
   });
 
@@ -336,12 +361,21 @@ function finishRound(room, reason = "complete") {
     io.to(room.code).emit("game:sessionEnd", {
       leaderboard: getFinalLeaderboard(room)
     });
+  } else {
+    // Auto-advance to next chooser after 3 seconds
+    setTimeout(() => {
+      if (rooms.has(room.code) && room.status === "round-ended") {
+        startRoundRobin(room);
+      }
+    }, 3000);
   }
 }
 
 function allActivePlayersSolved(room) {
-  const activePlayers = Array.from(room.players.values()).filter((player) => player.active);
-  return activePlayers.length > 0 && activePlayers.every((player) => player.solved);
+  const activePlayers = Array.from(room.players.values()).filter(
+    p => p.active && p.id !== room.currentChooserId
+  );
+  return activePlayers.length > 0 && activePlayers.every(p => p.solved);
 }
 
 function startRoundTimer(room) {
@@ -376,11 +410,64 @@ function startGameRound(room, roundConfig = null) {
     totalRounds: room.config.totalRounds,
     roundTime: room.config.roundTime,
     timerStart: room.roundStartedAt,
+    chooserId: room.currentChooserId,
+    chooserName: room.players.get(room.currentChooserId)?.name || "",
     players: getPublicPlayers(room)
   });
 
   io.to(room.code).emit("game:timerTick", { remaining: room.config.roundTime });
   startRoundTimer(room);
+}
+
+function startRoundRobin(room) {
+  if (room.currentRound === 0) {
+    room.playerOrder = Array.from(room.players.values())
+      .filter(p => p.active && p.connected)
+      .map(p => p.id);
+    room.chooserIndex = 0;
+  } else {
+    room.chooserIndex = (room.chooserIndex + 1) % Math.max(room.playerOrder.length, 1);
+  }
+
+  // Remove players who left or disconnected
+  room.playerOrder = room.playerOrder.filter(id => room.players.has(id));
+
+  if (room.playerOrder.length === 0) {
+    room.status = "session-ended";
+    io.to(room.code).emit("game:sessionEnd", {
+      leaderboard: getFinalLeaderboard(room)
+    });
+    return;
+  }
+
+  room.chooserIndex = room.chooserIndex % room.playerOrder.length;
+  const chooserId = room.playerOrder[room.chooserIndex];
+  room.currentChooserId = chooserId;
+  room.waitingForWord = true;
+  room.status = "choosing";
+
+  const chooser = room.players.get(chooserId);
+  const nextRoundNumber = room.currentRound + 1;
+
+  io.to(room.code).emit("game:choosingWord", {
+    chooserId,
+    chooserName: chooser ? chooser.name : "Unknown",
+    round: nextRoundNumber,
+    totalRounds: room.config.totalRounds
+  });
+
+  const chooserSocket = io.sockets.sockets.get(chooserId);
+  if (chooserSocket) {
+    chooserSocket.emit("game:requestWord", {
+      round: nextRoundNumber,
+      totalRounds: room.config.totalRounds
+    });
+  } else {
+    // Chooser disconnected — skip them
+    room.waitingForWord = false;
+    room.chooserIndex = (room.chooserIndex + 1) % room.playerOrder.length;
+    startRoundRobin(room);
+  }
 }
 
 function promoteOrCloseRoom(room) {
@@ -415,31 +502,18 @@ function removeExpiredRooms() {
 setInterval(removeExpiredRooms, 60 * 1000);
 
 io.on("connection", (socket) => {
-  // Host creates a room after PIN, word, category, hint, timer, and round count are validated server-side.
-  socket.on("room:create", async (payload = {}, callback) => {
+  // Host creates room with name, PIN, and round timer only.
+  // Word, category, hint are set by each round's chooser.
+  // Total rounds = 2x player count, calculated when session starts.
+  socket.on("room:create", (payload = {}, callback) => {
     const pin = String(payload.pin || "");
-    const word = normalizeWord(payload.word);
     const name = isDisplayName(payload.name) ? payload.name.trim() : "Host";
-    const category = String(payload.category || "Custom").trim().slice(0, 32);
-    const customCategory = String(payload.customCategory || "").trim().slice(0, 32);
-    const hint = String(payload.hint || "").trim().slice(0, 140);
     const roundTime = Number(payload.roundTime);
 
-    const customCode = String(payload.customCode || "").trim().toUpperCase();
-
     if (pin !== DEFAULT_PIN) return callback?.({ ok: false, error: "Invalid admin PIN." });
-    if (!isFiveLetterWord(word)) return callback?.({ ok: false, error: "Word must be exactly 5 alphabetic characters." });
-    const wordValid = await isValidWord(word);
-    if (!wordValid) return callback?.({ ok: false, error: "Please choose a real English common noun, verb, or adjective. Proper nouns (names, places, brands) are not allowed." });
+    if (![60, 120, 180, 300].includes(roundTime)) return callback?.({ ok: false, error: "Invalid round timer." });
 
-    let code;
-    if (customCode) {
-      if (!/^[A-Z0-9]{6}$/.test(customCode)) return callback?.({ ok: false, error: "Room code must be exactly 6 letters or numbers." });
-      if (rooms.has(customCode)) return callback?.({ ok: false, error: "That room code is already in use. Choose another or leave blank for a random one." });
-      code = customCode;
-    } else {
-      code = makeRoomCode();
-    }
+    const code = makeRoomCode();
     const room = {
       code,
       hostId: socket.id,
@@ -451,18 +525,19 @@ io.on("connection", (socket) => {
       timerInterval: null,
       countdownInterval: null,
       players: new Map(),
+      // Round-robin state
+      playerOrder: [],
+      chooserIndex: 0,
+      currentChooserId: null,
+      waitingForWord: false,
       config: {
-        category: category === "Custom" && customCategory ? customCategory : category,
-        customCategory,
-        hint,
-        roundTime: [60, 120, 180, 300].includes(roundTime) ? roundTime : 180,
-        totalRounds: 0,
-        // Will be calculated as 2x player count when session starts
+        roundTime: roundTime,
+        totalRounds: 0  // Calculated as 2x players when session starts
       },
       currentRoundConfig: {
-        word,
-        category: category === "Custom" && customCategory ? customCategory : category,
-        hint
+        word: null,
+        category: null,
+        hint: ""
       }
     };
 
@@ -472,7 +547,7 @@ io.on("connection", (socket) => {
     socket.data.roomCode = code;
     socket.join(code);
 
-    callback?.({ ok: true, room: getRoomSummary(room), playerId: socket.id, isHost: true, sessionId: host.sessionId });
+    callback?.({ ok: true, room: getRoomSummary(room), playerId: socket.id, isHost: true });
     socket.emit("room:created", { room: getRoomSummary(room), playerId: socket.id });
   });
 
@@ -510,15 +585,19 @@ io.on("connection", (socket) => {
     if (!existing) return callback?.({ ok: false, error: "Session not recognised." });
 
     const wasHost = existing.id === room.hostId;
+    const wasChooser = existing.id === room.currentChooserId;
 
     // Swap old socket ID → new socket ID
     room.players.delete(existing.id);
+    const oldId = existing.id;
     existing.id = socket.id;
     existing.connected = true;
     existing.active = true;
     room.players.set(socket.id, existing);
 
     if (wasHost) room.hostId = socket.id;
+    if (wasChooser) room.currentChooserId = socket.id;
+    room.playerOrder = room.playerOrder.map(id => id === oldId ? socket.id : id);
 
     socket.data.roomCode = room.code;
     socket.join(room.code);
@@ -528,32 +607,59 @@ io.on("connection", (socket) => {
     callback?.({ ok: true, isHost: wasHost, room: getRoomSummary(room) });
   });
 
-  // Host starts the next round immediately, optionally replacing the next word/category/hint.
-  socket.on("game:start", async (payload = {}, callback) => {
+  // Host starts the session. Total rounds = 2 x active player count.
+  // Word selection is handled per-round via round-robin.
+  socket.on("game:start", (payload = {}, callback) => {
     const room = getRoomForSocket(socket);
-    if (!assertHost(socket, room)) return callback?.({ ok: false, error: "Only the host can start a round." });
+    if (!assertHost(socket, room)) return callback?.({ ok: false, error: "Only the host can start the session." });
     if (room.status === "playing") return callback?.({ ok: false, error: "A round is already running." });
-    if (room.config.totalRounds > 0 && room.currentRound >= room.config.totalRounds) return callback?.({ ok: false, error: "The session has already ended." });
+    if (room.status === "choosing") return callback?.({ ok: false, error: "Waiting for word chooser." });
+    if (room.currentRound > 0 && room.currentRound >= room.config.totalRounds) {
+      return callback?.({ ok: false, error: "All rounds complete." });
+    }
 
-    const word = payload.word ? normalizeWord(payload.word) : room.currentRoundConfig.word;
-    const category = payload.category ? String(payload.category).trim().slice(0, 32) : room.config.category;
-    const hint = payload.hint !== undefined ? String(payload.hint || "").trim().slice(0, 140) : room.config.hint;
     const roundTime = Number(payload.roundTime || room.config.roundTime);
+    if (![60, 120, 180, 300].includes(roundTime)) {
+      return callback?.({ ok: false, error: "Invalid round timer." });
+    }
+    room.config.roundTime = roundTime;
 
-    if (!isFiveLetterWord(word)) return callback?.({ ok: false, error: "Word must be exactly 5 alphabetic characters." });
-    const wordValid = await isValidWord(word);
-    if (!wordValid) return callback?.({ ok: false, error: "Please choose a real English common noun, verb, or adjective. Proper nouns (names, places, brands) are not allowed." });
-    if (![60, 120, 180, 300].includes(roundTime)) return callback?.({ ok: false, error: "Invalid round timer." });
-
-    // Calculate total rounds as 2x the number of active players
+    // Lock in total rounds = 2 x active player count (min 2)
     const activePlayers = Array.from(room.players.values())
       .filter(p => p.active && p.connected);
     room.config.totalRounds = Math.max(2, activePlayers.length * 2);
 
-    room.config.category = category || "Custom";
-    room.config.hint = hint;
-    room.config.roundTime = roundTime;
-    startGameRound(room, { word, category: room.config.category, hint });
+    startRoundRobin(room);
+    callback?.({ ok: true, totalRounds: room.config.totalRounds });
+  });
+
+  // Word chooser submits the word for the current round.
+  socket.on("game:submitWord", async (payload = {}, callback) => {
+    const room = getRoomForSocket(socket);
+    if (!room) return callback?.({ ok: false, error: "Not in a room." });
+    if (!room.waitingForWord) return callback?.({ ok: false, error: "Not waiting for a word." });
+    if (socket.id !== room.currentChooserId) return callback?.({ ok: false, error: "It is not your turn to choose." });
+    if (room.status !== "choosing") return callback?.({ ok: false, error: "Room is not in choosing state." });
+
+    const word = normalizeWord(payload?.word);
+    const rawCategory = String(payload.category || "Custom").trim().slice(0, 32);
+    const customCategory = String(payload.customCategory || "").trim().slice(0, 32);
+    const hint = String(payload.hint || "").trim().slice(0, 140);
+
+    if (!isFiveLetterWord(word)) {
+      return callback?.({ ok: false, error: "Word must be exactly 5 alphabetic characters." });
+    }
+
+    const wordValid = await isValidWord(word);
+    if (!wordValid) {
+      return callback?.({ ok: false, error: "Please choose a real English word. Proper nouns are not allowed." });
+    }
+
+    const resolvedCategory = (rawCategory === "Custom" && customCategory)
+      ? customCategory : rawCategory;
+
+    room.waitingForWord = false;
+    startGameRound(room, { word, category: resolvedCategory, hint });
     callback?.({ ok: true });
   });
 
@@ -568,29 +674,13 @@ io.on("connection", (socket) => {
     room.status = "countdown";
     io.to(room.code).emit("game:countdown", { remaining });
 
-    room.countdownInterval = setInterval(async () => {
+    room.countdownInterval = setInterval(() => {
       remaining -= 1;
       io.to(room.code).emit("game:countdown", { remaining });
       if (remaining <= 0) {
         clearInterval(room.countdownInterval);
         room.countdownInterval = null;
-        const word = payload.word ? normalizeWord(payload.word) : room.currentRoundConfig.word;
-        if (!isFiveLetterWord(word)) {
-          room.status = "lobby";
-          io.to(room.code).emit("room:error", { error: "Word must be exactly 5 alphabetic characters." });
-          return;
-        }
-        const wordValid = await isValidWord(word);
-        if (!wordValid) {
-          room.status = "lobby";
-          io.to(room.code).emit("room:error", { error: "Word must be a real English common word. Proper nouns are not allowed." });
-          return;
-        }
-        startGameRound(room, {
-          word,
-          category: payload.category ? String(payload.category).trim().slice(0, 32) : room.config.category,
-          hint: payload.hint !== undefined ? String(payload.hint || "").trim().slice(0, 140) : room.config.hint
-        });
+        startRoundRobin(room);
       }
     }, 1000);
 
@@ -606,12 +696,14 @@ io.on("connection", (socket) => {
     if (!room || !player) return callback?.({ ok: false, error: "You are not in a room." });
     if (room.status !== "playing") return callback?.({ ok: false, error: "No round is currently active." });
     if (!player.active) return callback?.({ ok: false, error: "Inactive players cannot guess." });
+    if (socket.id === room.currentChooserId) {
+      return callback?.({ ok: false, error: "You chose the word this round — you cannot guess." });
+    }
     if (player.solved) return callback?.({ ok: false, error: "You already solved this round." });
     if (player.guesses.length >= MAX_GUESSES) return callback?.({ ok: false, error: "No guesses remaining." });
     if (!isFiveLetterWord(guess)) return callback?.({ ok: false, error: "Guess must be exactly 5 alphabetic characters." });
 
     // Dictionary check — only when MW_API_KEY is configured.
-    // null means the API was unreachable; fail-open so the game keeps running.
     if (MW_API_KEY) {
       const valid = await isValidWord(guess);
       if (valid === false) return callback?.({ ok: false, error: "Not a valid word. Try again." });
@@ -687,6 +779,45 @@ io.on("connection", (socket) => {
     callback?.({ ok: true });
   });
 
+  // Any player can voluntarily leave the room at any time.
+  socket.on("room:leave", (_payload = {}, callback) => {
+    const room = getRoomForSocket(socket);
+    if (!room) return callback?.({ ok: false, error: "Not in a room." });
+
+    const wasChooser = socket.id === room.currentChooserId;
+    const wasHost = socket.id === room.hostId;
+
+    room.players.delete(socket.id);
+    room.playerOrder = room.playerOrder.filter(id => id !== socket.id);
+    socket.leave(room.code);
+    socket.data.roomCode = null;
+    touchRoom(room);
+
+    callback?.({ ok: true });
+
+    if (room.players.size === 0) {
+      clearRoomTimers(room);
+      rooms.delete(room.code);
+      return;
+    }
+
+    if (wasHost) promoteOrCloseRoom(room);
+    emitPlayers(room, "room:playerLeft");
+
+    if (wasChooser && room.waitingForWord && room.status === "choosing") {
+      room.waitingForWord = false;
+      if (room.playerOrder.length > 0) startRoundRobin(room);
+    }
+
+    if (wasChooser && room.status === "playing") {
+      finishRound(room, "chooser-left");
+    }
+
+    if (room.status === "playing" && allActivePlayersSolved(room)) {
+      finishRound(room, "all-solved");
+    }
+  });
+
   // A disconnected player is marked inactive; if the host leaves, the next connected player is promoted.
   socket.on("disconnect", () => {
     const room = getRoomForSocket(socket);
@@ -701,6 +832,19 @@ io.on("connection", (socket) => {
 
     if (socket.id === room.hostId) {
       promoteOrCloseRoom(room);
+    }
+
+    // If the disconnected player was the current chooser
+    if (player && socket.id === room.currentChooserId) {
+      if (room.waitingForWord && room.status === "choosing") {
+        room.waitingForWord = false;
+        room.playerOrder = room.playerOrder.filter(id => id !== socket.id);
+        if (room.playerOrder.length > 0) {
+          setTimeout(() => {
+            if (rooms.has(room.code)) startRoundRobin(room);
+          }, 1500);
+        }
+      }
     }
 
     if (rooms.has(room.code)) {

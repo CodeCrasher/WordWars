@@ -1332,6 +1332,79 @@
         gap: 4px;
       }
     }
+
+    #chooserScreen.active {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; min-height: 100dvh;
+      padding: 24px 16px; box-sizing: border-box;
+    }
+    .chooser-container { width: 100%; max-width: 480px; }
+    .chooser-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--accent); color: #fff;
+      font-size: 0.82rem; font-weight: 800;
+      padding: 5px 14px; border-radius: 999px;
+      margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .chooser-header { text-align: center; margin-bottom: 24px; }
+    .chooser-sub { color: var(--muted); font-size: 0.9rem; margin-top: 6px; }
+    .chooser-form {
+      background: var(--panel); border-radius: 14px;
+      border: 1px solid var(--line); padding: 24px;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+    .chooser-waiting {
+      text-align: center; padding: 40px 24px;
+      background: var(--panel); border-radius: 14px;
+      border: 1px solid var(--line);
+    }
+    .chooser-avatar {
+      width: 72px; height: 72px; border-radius: 50%;
+      background: var(--accent); color: #fff;
+      font-size: 1.8rem; font-weight: 900;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 16px;
+    }
+    .chooser-wait-sub { color: var(--muted); font-size: 0.95rem; margin: 4px 0 20px; }
+    .chooser-round-label { color: var(--muted); font-size: 0.82rem; margin-top: 16px; }
+    .chooser-wait-dots { display: flex; justify-content: center; gap: 6px; }
+    .chooser-wait-dots span {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--accent); animation: chooserDot 1.2s ease infinite;
+    }
+    .chooser-wait-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .chooser-wait-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes chooserDot {
+      0%,80%,100% { transform: scale(0.6); opacity: 0.4; }
+      40%         { transform: scale(1);   opacity: 1;   }
+    }
+    .error-msg {
+      color: var(--danger); font-size: 0.85rem; font-weight: 600;
+    }
+    .btn-leave {
+      background: transparent; border: 1px solid var(--danger);
+      color: var(--danger); font-size: 0.82rem; font-weight: 700;
+      padding: 6px 14px; border-radius: 8px; cursor: pointer;
+      transition: background 150ms ease;
+    }
+    .btn-leave:hover {
+      background: color-mix(in srgb, var(--danger) 12%, transparent);
+    }
+    .btn-leave--game {
+      position: absolute; top: 12px; right: 12px; z-index: 5;
+      font-size: 0.75rem; padding: 5px 10px;
+    }
+    .leave-room-footer { display: flex; justify-content: center; margin-top: 20px; }
+    .chooser-indicator {
+      font-size: 0.78rem; color: var(--muted);
+      text-align: center; padding: 4px 0 8px;
+    }
+    .chooser-indicator strong { color: var(--accent); }
+    @media (max-width: 480px) {
+      .chooser-form { padding: 16px; }
+      .btn-leave--game { font-size: 0; padding: 6px 8px; }
+      .btn-leave--game::after { content: "✕"; font-size: 0.9rem; }
+    }
   </style>
 </head>
 <body>
@@ -1412,17 +1485,7 @@
                 <label for="adminPin">Admin PIN</label>
                 <input id="adminPin" type="password" value="1234" autocomplete="off">
               </div>
-              <div class="field">
-                <label for="wordInput">Word of the Day</label>
-                <input id="wordInput" maxlength="5" placeholder="CRANE" autocomplete="off">
-                <span class="word-hint" id="wordInputHint"></span>
-              </div>
-              <div class="field">
-                <label for="customCodeInput">Room Code</label>
-                <input id="customCodeInput" maxlength="6" placeholder="Leave blank for random" autocomplete="off" style="text-transform:uppercase">
-                <span class="word-hint" id="customCodeHint">6 chars — leave blank for random</span>
-              </div>
-              <div class="field">
+              <div class="field full">
                 <label for="timerInput">Round Timer</label>
                 <select id="timerInput">
                   <option value="60">60 seconds</option>
@@ -1431,13 +1494,8 @@
                   <option value="300">5 minutes</option>
                 </select>
               </div>
-              <div class="field">
-                <label for="roundsInput">Rounds</label>
-                <input id="roundsInput" type="number" min="1" max="10" value="1">
-              </div>
               <div class="field full">
-                <label for="hintInput">Hint After 3 Failed Attempts</label>
-                <textarea id="hintInput" maxlength="140" placeholder="Optional hint"></textarea>
+                <p class="subtitle" style="margin:0">Each round, a different player picks the secret word. Rounds = 2× the number of players.</p>
               </div>
               <div class="field full">
                 <button class="btn primary" type="submit" style="width:100%">Create Private Room</button>
@@ -1500,30 +1558,13 @@
           <aside class="panel" id="adminPanel">
             <div class="panel-head">
               <div>
-                <h2>Admin Panel</h2>
-                <p class="subtitle">Configure the next launch.</p>
+                <h2>Host Controls</h2>
+                <p class="subtitle">Start the session when everyone's in.</p>
               </div>
             </div>
             <form class="form-grid" id="adminForm">
               <div class="field full">
-                <label for="adminWord">Next Word</label>
-                <input id="adminWord" maxlength="5" autocomplete="off">
-                <span class="word-hint" id="adminWordHint"></span>
-              </div>
-              <div class="field full">
-                <label for="adminCategory">Category</label>
-                <select id="adminCategory"></select>
-              </div>
-              <div class="field full hidden" id="adminCustomWrap">
-                <label for="adminCustomCategory">Custom Category</label>
-                <input id="adminCustomCategory" maxlength="32" autocomplete="off">
-              </div>
-              <div class="field full">
-                <label for="adminHint">Hint</label>
-                <textarea id="adminHint" maxlength="140"></textarea>
-              </div>
-              <div class="field">
-                <label for="adminTimer">Timer</label>
+                <label for="adminTimer">Round Timer</label>
                 <select id="adminTimer">
                   <option value="60">60s</option>
                   <option value="120">2min</option>
@@ -1531,23 +1572,95 @@
                   <option value="300">5min</option>
                 </select>
               </div>
-              <div class="field">
-                <label for="adminRounds">Rounds</label>
-                <input id="adminRounds" type="number" min="1" max="10">
+              <div class="field full">
+                <p class="subtitle" style="margin:0">Each round a different player picks the word — everyone else guesses. The session runs 2× the player count in rounds, and advances automatically.</p>
               </div>
               <div class="field full">
-                <div class="btn-row">
-                  <button class="btn primary" id="startGameBtn" type="submit">Start Game</button>
-                  <button class="btn" id="forceStartBtn" type="button">Force Start 10s</button>
-                </div>
+                <button class="btn primary" id="startGameBtn" type="submit" style="width:100%">Start Game</button>
                 <div class="error" id="adminError"></div>
               </div>
             </form>
           </aside>
         </div>
+        <div class="leave-room-footer">
+          <button id="leaveFromLobby" class="btn btn-leave">Leave Room</button>
+        </div>
+      </section>
+
+      <section class="screen" id="chooserScreen">
+        <div class="chooser-container">
+
+          <div id="chooserPickPanel" class="hidden">
+            <div class="chooser-header">
+              <div class="chooser-badge">Your turn to pick!</div>
+              <h2 id="chooserRoundLabel">Round 1 of 3</h2>
+              <p class="chooser-sub">
+                Pick a word. Everyone else guesses it. You watch.
+              </p>
+            </div>
+            <div class="chooser-form">
+              <div class="field">
+                <label for="chooserWord">Secret word (5 letters)</label>
+                <input id="chooserWord" maxlength="5" placeholder="CRANE"
+                       autocomplete="off" spellcheck="false" class="input-lg"/>
+                <span class="word-hint" id="chooserWordHint"></span>
+              </div>
+              <div class="field">
+                <label for="chooserCategory">Category</label>
+                <select id="chooserCategory">
+                  <option>Animals</option>
+                  <option>Food &amp; Drink</option>
+                  <option>Science</option>
+                  <option>Sports</option>
+                  <option>Geography</option>
+                  <option>Movies &amp; TV</option>
+                  <option>Music</option>
+                  <option>Tech</option>
+                  <option>History</option>
+                  <option>Mythology</option>
+                  <option value="Custom">Custom</option>
+                </select>
+              </div>
+              <div class="field hidden" id="chooserCustomCategoryField">
+                <label for="chooserCustomCategory">Custom category</label>
+                <input id="chooserCustomCategory" maxlength="32"
+                       placeholder="e.g. 90s Movies"/>
+              </div>
+              <div class="field">
+                <label for="chooserHint">
+                  Hint (optional — shown after 3 wrong guesses)
+                </label>
+                <input id="chooserHint" maxlength="140"
+                       placeholder="e.g. You eat this for breakfast"/>
+              </div>
+              <div id="chooserError" class="error-msg hidden"></div>
+              <button id="chooserSubmitBtn" class="btn primary" disabled>
+                Set Word &amp; Start Round
+              </button>
+            </div>
+          </div>
+
+          <div id="chooserWaitPanel" class="hidden">
+            <div class="chooser-waiting">
+              <div class="chooser-avatar" id="chooserWaitAvatar">?</div>
+              <h2 id="chooserWaitName">Player</h2>
+              <p class="chooser-wait-sub">is choosing the word…</p>
+              <div class="chooser-wait-dots">
+                <span></span><span></span><span></span>
+              </div>
+              <p id="chooserWaitRound" class="chooser-round-label">Round 1</p>
+            </div>
+          </div>
+
+        </div>
+        <div class="leave-room-footer">
+          <button id="leaveFromChooser" class="btn btn-leave">Leave Room</button>
+        </div>
       </section>
 
       <section class="screen" id="gameScreen">
+        <button id="leaveFromGame" class="btn btn-leave btn-leave--game"
+                title="Leave game">✕ Leave</button>
         <div class="game-wrap">
           <div class="panel game-main">
             <div class="game-meta">
@@ -1595,44 +1708,16 @@
       </section>
 
       <section class="screen" id="roundEndScreen">
-        <div class="layout">
-          <div class="panel">
-            <div class="panel-head">
-              <div>
-                <h2>Round Complete</h2>
-                <p class="subtitle" id="roundEndSubtitle">Scores are locked.</p>
-              </div>
-              <span class="badge" id="wordReveal">WORD</span>
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Round Complete</h2>
+              <p class="subtitle" id="roundEndSubtitle">Scores are locked.</p>
             </div>
-            <div class="score-list" id="roundLeaderboard"></div>
+            <span class="badge" id="wordReveal">WORD</span>
           </div>
-          <aside class="panel" id="nextRoundPanel">
-            <h2>Next Round</h2>
-            <p class="subtitle" style="margin-bottom:14px;">Host can set a new word before continuing.</p>
-            <form class="form-grid" id="nextRoundForm">
-              <div class="field full">
-                <label for="nextWord">Word</label>
-                <input id="nextWord" maxlength="5" autocomplete="off">
-                <span class="word-hint" id="nextWordHint"></span>
-              </div>
-              <div class="field full">
-                <label for="nextCategory">Category</label>
-                <select id="nextCategory"></select>
-              </div>
-              <div class="field full hidden" id="nextCustomWrap">
-                <label for="nextCustomCategory">Custom Category</label>
-                <input id="nextCustomCategory" maxlength="32" autocomplete="off">
-              </div>
-              <div class="field full">
-                <label for="nextHint">Hint</label>
-                <textarea id="nextHint" maxlength="140"></textarea>
-              </div>
-              <div class="field full">
-                <button class="btn primary" type="submit">Start Next Round</button>
-                <div class="error" id="nextError"></div>
-              </div>
-            </form>
-          </aside>
+          <div class="score-list" id="roundLeaderboard"></div>
+          <p class="subtitle" id="nextRoundNote" style="margin-top:14px;text-align:center;">Next round starts automatically…</p>
         </div>
       </section>
 
@@ -1670,19 +1755,6 @@
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
-    const categories = [
-      "Animals",
-      "Food & Drink",
-      "Science",
-      "Sports",
-      "Geography",
-      "Movies & TV",
-      "Music",
-      "Tech",
-      "History",
-      "Mythology",
-      "Custom"
-    ];
 
     const state = {
       screen: "home",
@@ -1756,10 +1828,6 @@
       overlay.addEventListener("click", dismiss, { once: true });
     }
 
-    function fillCategorySelect(select) {
-      select.innerHTML = categories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join("");
-    }
-
     function escapeHtml(value) {
       return String(value ?? "").replace(/[&<>"']/g, (char) => ({
         "&": "&amp;",
@@ -1771,7 +1839,7 @@
     }
 
     // Screens where the back button must be blocked (game in progress)
-    const LOCKED_SCREENS = new Set(["game", "solved", "roundEnd"]);
+    const LOCKED_SCREENS = new Set(["game", "solved", "roundEnd", "chooser"]);
     let _histNavFlag = false; // prevents double push during popstate restore
 
     function showScreen(name) {
@@ -1806,39 +1874,7 @@
       return `${mins}:${secs}`;
     }
 
-    function getConfiguredCategory(prefix) {
-      const category = $(`${prefix}Category`)?.value || $(`${prefix}Input`)?.value || "Custom";
-      if (category === "Custom") {
-        return $(`${prefix}CustomCategory`)?.value || $("customCategoryInput")?.value || "Custom";
-      }
-      return category;
-    }
-
-    function currentAdminPayload(prefix = "admin") {
-      const wordEl = prefix === "admin" ? $("adminWord") : prefix === "next" ? $("nextWord") : $("wordInput");
-      const hintEl = prefix === "admin" ? $("adminHint") : prefix === "next" ? $("nextHint") : $("hintInput");
-      const timerEl = prefix === "admin" ? $("adminTimer") : $("timerInput");
-      const roundsEl = prefix === "admin" ? $("adminRounds") : $("roundsInput");
-      return {
-        word: wordEl.value.trim(),
-        category: getConfiguredCategory(prefix),
-        hint: hintEl.value.trim(),
-        roundTime: Number(timerEl.value),
-        totalRounds: Number(roundsEl.value)
-      };
-    }
-
-    function syncCustomVisibility(selectId, wrapId) {
-      const select = $(selectId);
-      const wrap = $(wrapId);
-      wrap.classList.toggle("hidden", select.value !== "Custom");
-    }
-
     function initControls() {
-      ["adminCategory", "nextCategory"].forEach((id) => fillCategorySelect($(id)));
-      $("adminCategory").addEventListener("change", () => syncCustomVisibility("adminCategory", "adminCustomWrap"));
-      $("nextCategory").addEventListener("change", () => syncCustomVisibility("nextCategory", "nextCustomWrap"));
-
       $("themeToggle").addEventListener("click", () => {
         const app = $("app");
         const next = app.dataset.theme === "dark" ? "light" : "dark";
@@ -1863,8 +1899,6 @@
       $("createForm").addEventListener("submit", createRoom);
       $("joinForm").addEventListener("submit", joinRoom);
       $("adminForm").addEventListener("submit", startFromAdmin);
-      $("nextRoundForm").addEventListener("submit", startNextRound);
-      $("forceStartBtn").addEventListener("click", forceStart);
       $("endRoundBtn").addEventListener("click", endRound);
       $("playAgainBtn").addEventListener("click", () => showScreen("home"));
       $("newSessionBtn").addEventListener("click", () => window.location.reload());
@@ -1926,9 +1960,7 @@
 
     function initWordValidation() {
       [
-        { inputId: "wordInput",  hintId: "wordInputHint"  },
-        { inputId: "adminWord",  hintId: "adminWordHint"  },
-        { inputId: "nextWord",   hintId: "nextWordHint"   }
+        { inputId: "chooserWord", hintId: "chooserWordHint" }
       ].forEach(({ inputId, hintId }) => {
         const input = $(inputId);
         const hint  = $(hintId);
@@ -1993,11 +2025,7 @@
       socket.emit("room:create", {
         name: $("hostName").value.trim(),
         pin: $("adminPin").value,
-        word: $("wordInput").value.trim(),
-        hint: $("hintInput").value.trim(),
-        roundTime: Number($("timerInput").value),
-        totalRounds: Number($("roundsInput").value),
-        customCode: $("customCodeInput").value.trim().toUpperCase()
+        roundTime: Number($("timerInput").value)
       }, (response) => {
         if (!response?.ok) return setError("createError", response?.error || "Could not create room.");
         enterRoom(response);
@@ -2028,26 +2056,7 @@
 
     function preloadAdminConfig() {
       if (!state.room) return;
-      $("adminWord").value = "";
-      $("adminHint").value = "";
       $("adminTimer").value = String(state.room.roundTime || 180);
-      $("adminRounds").value = state.room.totalRounds || 1;
-      setSelectToCategory("adminCategory", state.room.category);
-      $("nextCategory").value = $("adminCategory").value;
-      $("nextHint").value = "";
-      syncCustomVisibility("adminCategory", "adminCustomWrap");
-      syncCustomVisibility("nextCategory", "nextCustomWrap");
-    }
-
-    function setSelectToCategory(id, category) {
-      const select = $(id);
-      if (categories.includes(category)) {
-        select.value = category;
-      } else {
-        select.value = "Custom";
-        const customId = id === "adminCategory" ? "adminCustomCategory" : id === "nextCategory" ? "nextCustomCategory" : "customCategoryInput";
-        $(customId).value = category || "";
-      }
     }
 
     function renderLobby() {
@@ -2058,10 +2067,13 @@
       $("hostBadge").textContent = state.isHost ? "Host" : "Player";
       $("adminPanel").classList.toggle("hidden", !state.isHost);
 
+      const roundsLabel = state.room.totalRounds > 0
+        ? `${state.room.totalRounds} round${state.room.totalRounds === 1 ? "" : "s"}`
+        : "2× players in rounds";
       $("configBadges").innerHTML = [
-        state.room.category,
         `${formatTime(state.room.roundTime)} timer`,
-        `${state.room.totalRounds} round${state.room.totalRounds === 1 ? "" : "s"}`,
+        roundsLabel,
+        "Players pick the words",
         `${state.room.players.length}/${20} players`
       ].map((item) => `<span class="badge">${escapeHtml(item)}</span>`).join("");
 
@@ -2089,28 +2101,8 @@
     function startFromAdmin(event) {
       event.preventDefault();
       setError("adminError", "");
-      socket.emit("game:start", currentAdminPayload("admin"), (response) => {
+      socket.emit("game:start", { roundTime: Number($("adminTimer").value) }, (response) => {
         if (!response?.ok) setError("adminError", response?.error || "Could not start game.");
-      });
-    }
-
-    function forceStart() {
-      setError("adminError", "");
-      socket.emit("game:forceStart", currentAdminPayload("admin"), (response) => {
-        if (!response?.ok) setError("adminError", response?.error || "Could not force-start.");
-      });
-    }
-
-    function startNextRound(event) {
-      event.preventDefault();
-      setError("nextError", "");
-      const payload = {
-        ...currentAdminPayload("next"),
-        roundTime: state.room?.roundTime || state.game.roundTime,
-        totalRounds: state.room?.totalRounds || state.game.totalRounds
-      };
-      socket.emit("game:start", payload, (response) => {
-        if (!response?.ok) setError("nextError", response?.error || "Could not start next round.");
       });
     }
 
@@ -2140,6 +2132,23 @@
       };
       $("gameCategory").textContent = payload.category;
       $("roundBadge").textContent = `Round ${payload.round}/${payload.totalRounds}`;
+
+      let ind = document.querySelector(".chooser-indicator");
+      if (!ind) {
+        ind = document.createElement("p");
+        ind.className = "chooser-indicator";
+        const boardEl = document.querySelector(".board-area,#board,.board");
+        if (boardEl?.parentNode) boardEl.parentNode.insertBefore(ind, boardEl);
+      }
+      if (payload.chooserName) {
+        const youChose = payload.chooserId === state.playerId;
+        ind.innerHTML = youChose
+          ? `You chose this word — sit back and watch.`
+          : `Word chosen by <strong>${escapeHtml(payload.chooserName)}</strong>`;
+        ind.style.display = "block";
+      } else {
+        ind.style.display = "none";
+      }
       $("hintBox").textContent = payload.hintAvailable ? "Hint unlocks after 3 failed attempts." : "No hint for this round.";
       $("endRoundBtn").classList.toggle("hidden", !state.isHost);
       $("liveLeaderboard").innerHTML = `<div class="muted">No solves yet.</div>`;
@@ -2291,30 +2300,31 @@
     function renderRoundEnd(payload) {
       $("roundEndSubtitle").textContent = `Round ${payload.round}/${payload.totalRounds} ended by ${payload.reason}.`;
       $("wordReveal").textContent = payload.word;
-      $("roundLeaderboard").innerHTML = payload.leaderboard.map((entry, index) => `
+      $("roundLeaderboard").innerHTML = payload.leaderboard.map((entry, index) => {
+        const detail = entry.isChooser
+          ? "Picked the word this round"
+          : entry.solved ? `${formatTime(entry.time)} · ${entry.guessesUsed} guesses` : "Did not solve";
+        const breakdownLine = entry.isChooser
+          ? `Chooser bonus ${entry.breakdown.chooserBonus ?? entry.score}`
+          : `Base ${entry.breakdown.base} + Time ${entry.breakdown.timeBonus} + Guess ${entry.breakdown.guessBonus}`;
+        return `
         <div class="score-row">
           <div>
-            <strong>${index + 1}. ${escapeHtml(entry.name)}</strong>
-            <div class="muted">
-              ${entry.solved ? `${formatTime(entry.time)} · ${entry.guessesUsed} guesses` : "Did not solve"}
-            </div>
-            <div class="muted">
-              Base ${entry.breakdown.base} + Time ${entry.breakdown.timeBonus} + Guess ${entry.breakdown.guessBonus}
-            </div>
+            <strong>${index + 1}. ${escapeHtml(entry.name)}${entry.isChooser ? " 🎯" : ""}</strong>
+            <div class="muted">${detail}</div>
+            <div class="muted">${breakdownLine}</div>
           </div>
           <div style="text-align:right;">
             <strong>${entry.score}</strong>
             <div class="muted">${entry.cumulativeScore} total</div>
           </div>
-        </div>
-      `).join("");
+        </div>`;
+      }).join("");
 
       const hasNext = payload.round < payload.totalRounds;
-      $("nextRoundPanel").classList.toggle("hidden", !state.isHost || !hasNext);
-      $("nextWord").value = "";
-      $("nextHint").value = "";
-      setSelectToCategory("nextCategory", state.game.category);
-      syncCustomVisibility("nextCategory", "nextCustomWrap");
+      $("nextRoundNote").textContent = hasNext
+        ? "Next round starts automatically…"
+        : "Final scores coming up…";
       showScreen("roundEnd");
     }
 
@@ -2418,6 +2428,94 @@
         // Refresh host-only UI for whatever screen we're on
         $("endRoundBtn").classList.toggle("hidden", !state.isHost);
         if (state.screen === "lobby") renderLobby();
+      });
+    });
+
+    // ── game:choosingWord ─────────────────────────────────────────
+    socket.on("game:choosingWord", ({ chooserId, chooserName, round, totalRounds }) => {
+      showScreen("chooser");
+      const isChooser = chooserId === state.playerId;
+      const label = `Round ${round} of ${totalRounds}`;
+      if (isChooser) {
+        $("chooserPickPanel").classList.remove("hidden");
+        $("chooserWaitPanel").classList.add("hidden");
+        $("chooserRoundLabel").textContent = label;
+        $("chooserWord").value = "";
+        $("chooserWordHint").textContent = "";
+        $("chooserWordHint").className = "word-hint";
+        $("chooserHint").value = "";
+        $("chooserError").classList.add("hidden");
+        $("chooserSubmitBtn").disabled = true;
+      } else {
+        $("chooserPickPanel").classList.add("hidden");
+        $("chooserWaitPanel").classList.remove("hidden");
+        $("chooserWaitName").textContent = chooserName;
+        $("chooserWaitRound").textContent = label;
+        $("chooserWaitAvatar").textContent = (chooserName || "?").charAt(0).toUpperCase();
+      }
+    });
+
+    // ── game:requestWord (sent only to chooser — no extra action needed) ──
+    socket.on("game:requestWord", () => {});
+
+    // ── Chooser word input → enable submit ───────────────────────
+    $("chooserWord").addEventListener("input", () => {
+      const val = ($("chooserWord").value || "").trim();
+      $("chooserSubmitBtn").disabled =
+        val.length !== 5 || !/^[A-Za-z]{5}$/.test(val);
+    });
+
+    // ── Chooser category custom toggle ───────────────────────────
+    $("chooserCategory").addEventListener("change", () => {
+      $("chooserCustomCategoryField").classList.toggle(
+        "hidden", $("chooserCategory").value !== "Custom"
+      );
+    });
+
+    // ── Chooser submit word ───────────────────────────────────────
+    $("chooserSubmitBtn").addEventListener("click", () => {
+      const word = ($("chooserWord").value || "").trim().toUpperCase();
+      const category = $("chooserCategory").value;
+      const customCategory = ($("chooserCustomCategory")?.value || "").trim();
+      const hint = ($("chooserHint").value || "").trim();
+      const err = $("chooserError");
+
+      if (!/^[A-Z]{5}$/.test(word)) {
+        err.textContent = "Must be exactly 5 letters (A–Z only).";
+        err.classList.remove("hidden");
+        return;
+      }
+      err.classList.add("hidden");
+      $("chooserSubmitBtn").disabled = true;
+      $("chooserSubmitBtn").textContent = "Validating…";
+
+      socket.emit("game:submitWord", { word, category, customCategory, hint }, res => {
+        $("chooserSubmitBtn").textContent = "Set Word & Start Round";
+        if (!res.ok) {
+          err.textContent = res.error || "Failed to set word.";
+          err.classList.remove("hidden");
+          $("chooserSubmitBtn").disabled = false;
+        }
+      });
+    });
+
+    // ── Leave room ────────────────────────────────────────────────
+    function leaveRoom() {
+      socket.emit("room:leave", {}, res => {
+        if (res && !res.ok) console.warn("Leave error:", res.error);
+        state.room = null;
+        state.playerId = null;
+        state.isHost = false;
+        state.sessionId = null;
+        _histNavFlag = true;
+        showScreen("home");
+      });
+    }
+
+    ["leaveFromLobby", "leaveFromGame", "leaveFromChooser"].forEach(id => {
+      const btn = $(id);
+      if (btn) btn.addEventListener("click", () => {
+        if (confirm("Are you sure you want to leave the room?")) leaveRoom();
       });
     });
 
