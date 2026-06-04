@@ -165,9 +165,9 @@
     .home {
       min-height: calc(100vh - 150px);
       flex-direction: column;
-      align-items: stretch;
+      align-items: center;
       justify-content: center;
-      padding: 20px 0;
+      padding: 12px 0;
     }
 
     /* Must be higher specificity than .screen { display:none } so the home
@@ -177,10 +177,10 @@
     }
 
     .home-panel {
-      width: 100%;
+      width: min(520px, 100%);
       display: grid;
-      gap: 18px;
-      padding: 32px;
+      gap: 14px;
+      padding: 24px;
       border: 1px solid color-mix(in srgb, var(--accent-2) 30%, transparent);
       border-radius: 16px;
       background: color-mix(in srgb, var(--panel) 94%, transparent);
@@ -678,29 +678,26 @@
     }
 
     .home-content {
-      display: grid;
-      grid-template-columns: minmax(0, 520px) minmax(0, 480px);
-      gap: 48px;
+      display: flex;
+      flex-direction: column;
       align-items: center;
       width: 100%;
-      max-width: 1080px;
-      margin: 0 auto;
     }
 
     .hero-block {
-      text-align: left;
-      margin-bottom: 0;
+      text-align: center;
+      margin-bottom: 20px;
       animation: fadeUp 400ms ease-out 0ms both;
     }
 
     .hero-logo {
       display: grid;
       place-items: center;
-      width: 108px;
-      height: 108px;
-      margin: 0 0 20px;
+      width: 88px;
+      height: 88px;
+      margin: 0 auto 12px;
       overflow: hidden;
-      border-radius: 24px;
+      border-radius: 20px;
       animation: pulse 3s ease infinite;
     }
 
@@ -713,24 +710,24 @@
     }
 
     .hero-title {
-      font-size: clamp(2rem, 5vw, 3.2rem);
+      font-size: clamp(1.6rem, 3.5vw, 2.4rem);
       font-weight: 900;
       line-height: 1.1;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
 
     .hero-sub {
       color: var(--muted);
-      font-size: 1rem;
+      font-size: 0.9rem;
       letter-spacing: 0.04em;
-      margin-bottom: 24px;
+      margin-bottom: 14px;
     }
 
     .feature-pills {
       display: flex;
       flex-wrap: wrap;
-      justify-content: flex-start;
-      gap: 10px;
+      justify-content: center;
+      gap: 8px;
     }
 
     .feature-pill {
@@ -846,7 +843,7 @@
 
     .home-footer {
       text-align: center;
-      margin-top: 40px;
+      margin-top: 16px;
       color: var(--muted);
       font-size: 0.8rem;
       opacity: 0.6;
@@ -886,23 +883,6 @@
     }
 
     @media (max-width: 860px) {
-      .home-content {
-        grid-template-columns: 1fr;
-        gap: 28px;
-      }
-
-      .hero-block {
-        text-align: center;
-      }
-
-      .hero-logo {
-        margin: 0 auto 16px;
-      }
-
-      .feature-pills {
-        justify-content: center;
-      }
-
       .layout,
       .game-wrap {
         grid-template-columns: 1fr;
