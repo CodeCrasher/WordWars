@@ -1,5 +1,5 @@
 {
-  "name": "diy-wordle-multiplayer",
+  "name": "wordwars",
   "version": "1.0.0",
   "description": "A browser-based multiplayer Wordle-style game with Socket.io.",
   "main": "server.js",

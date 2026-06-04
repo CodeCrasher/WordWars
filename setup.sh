@@ -1,10 +1,10 @@
 set -e
 
-PROJECT_NAME="diy-wordle-multiplayer"
+PROJECT_NAME="wordwars"
 SERVICE_NAME="web"
-REPO_NAME="diyWordle"
-REPO_SSH="git@github.com:CodeCrasher/diyWordle.git"
-REPO_HTTPS="https://github.com/CodeCrasher/diyWordle"
+REPO_NAME="WordWars"
+REPO_SSH="git@github.com:CodeCrasher/WordWars.git"
+REPO_HTTPS="https://github.com/CodeCrasher/WordWars"
 COMMIT_MESSAGE="Deploy setup updates"
 
 check_tool() {
@@ -112,7 +112,7 @@ LIVE_URL=$(railway domain --service "$SERVICE_NAME")
 GITHUB_USER=$(gh api user -q .login)
 
 echo "================================================"
-echo "✅ DIY Wordle is live!"
+echo "✅ WordWars is live!"
 echo "🎮 URL: $LIVE_URL"
 echo "🐙 Repo: https://github.com/$GITHUB_USER/$REPO_NAME"
 echo "🔄 CI/CD: push to main = auto-deploy in ~2 min"

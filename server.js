@@ -718,5 +718,5 @@ process.on("SIGTERM", () => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`DIY Wordle multiplayer server running at http://localhost:${PORT}`);
+  console.log(`WordWars server running at http://localhost:${PORT}`);
 });

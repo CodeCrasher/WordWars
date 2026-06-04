@@ -2,9 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "diyWordle",
+      "name": "WordWars",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["/Users/ambhojshukla/Desktop/Origin/diyWordle/server.js"],
+      "runtimeArgs": ["/Users/ambhojshukla/Desktop/Origin/WordWars/server.js"],
       "port": 3000
     }
   ]

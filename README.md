@@ -1,4 +1,4 @@
-# DIY Wordle Arena
+# WordWars
 
 Competitive multiplayer Wordle — the host sets the word and category,
 players race to solve it. Scoring is based on speed and guess
