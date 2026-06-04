@@ -1266,10 +1266,22 @@
       }[char]));
     }
 
+    // Screens where the back button must be blocked (game in progress)
+    const LOCKED_SCREENS = new Set(["game", "solved", "roundEnd"]);
+    let _histNavFlag = false; // prevents double push during popstate restore
+
     function showScreen(name) {
       state.screen = name;
       document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("active"));
       $(`${name}Screen`).classList.add("active");
+      if (!_histNavFlag) {
+        // Locked screens use replaceState so the entry before them stays in history;
+        // navigable screens push a new entry so back lands there.
+        LOCKED_SCREENS.has(name)
+          ? history.replaceState({ screen: name }, "")
+          : history.pushState({ screen: name }, "");
+      }
+      _histNavFlag = false;
     }
 
     function showToast(message) {
@@ -1361,6 +1373,29 @@
 
       document.addEventListener("keydown", handlePhysicalKey);
       initWordValidation();
+
+      // ── Browser back-button support ─────────────────────────────────────────
+      window.addEventListener("popstate", function (e) {
+        // Block back navigation while a game is active
+        if (LOCKED_SCREENS.has(state.screen)) {
+          history.pushState({ screen: state.screen }, "");
+          showToast("Game in progress — back navigation is disabled.");
+          return;
+        }
+
+        // Clean up when leaving the lobby or session-end screen
+        if (state.screen === "lobby" || state.screen === "sessionEnd") {
+          socket.disconnect();
+          socket.connect();
+          state.room = {};
+          state.isHost = false;
+          state.playerId = null;
+        }
+
+        const target = e.state?.screen || "home";
+        _histNavFlag = true; // prevent showScreen from pushing a new entry
+        showScreen(target);
+      });
     }
 
     function initWordValidation() {
@@ -1842,6 +1877,9 @@
     initControls();
     renderBoard();
     renderKeyboard();
+
+    // Seed the initial history entry so popstate always has a state to read
+    history.replaceState({ screen: "home" }, "");
 
   </script>
 </body>
