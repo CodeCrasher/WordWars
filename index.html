@@ -1766,8 +1766,11 @@
         }
       });
 
-      // Backspace and Enter/Return from the native keyboard
+      // Backspace and Enter/Return from the native keyboard.
+      // stopPropagation prevents the event bubbling to document's handlePhysicalKey
+      // listener, which would cause every keystroke to be processed twice.
       capture.addEventListener("keydown", function (e) {
+        e.stopPropagation();
         if (e.key === "Backspace") { e.preventDefault(); handleKey("BACKSPACE"); }
         if (e.key === "Enter")     { e.preventDefault(); handleKey("ENTER"); }
       });
