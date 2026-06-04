@@ -5,7 +5,8 @@
       "name": "WordWars",
       "runtimeExecutable": "node",
       "runtimeArgs": ["/Users/ambhojshukla/Desktop/Origin/WordWars/server.js"],
-      "port": 3000
+      "env": { "PORT": "3001" },
+      "port": 3001
     }
   ]
 }

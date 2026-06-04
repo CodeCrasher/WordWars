@@ -21,6 +21,8 @@
       --gray: #5a4a3a;
       --shadow: rgba(60, 20, 5, 0.35);
       --tile: #140c05;
+      --key-bg: #8c6e5c;
+      --key-bg-border: #a07e6a;
     }
 
     [data-theme] {
@@ -43,6 +45,8 @@
       --gray: #8a7a6a;
       --shadow: rgba(122, 74, 40, 0.15);
       --tile: #ffffff;
+      --key-bg: #b8a08c;
+      --key-bg-border: #c8b09a;
     }
 
     * {
@@ -509,12 +513,13 @@
       width: 42px;
       height: 48px;
       border-radius: 8px;
-      background: var(--panel-2);
+      background: var(--key-bg);
       color: var(--text);
-      border: 1px solid var(--line);
+      border: 1px solid var(--key-bg-border);
       font-size: 0.95rem;
       font-weight: 900;
       padding: 0 6px;
+      transition: background 200ms ease, color 200ms ease, opacity 200ms ease, border-color 200ms ease;
     }
 
     .key.wide {
@@ -534,7 +539,9 @@
 
     .key.gray {
       background: var(--gray);
-      color: #fff;
+      color: rgba(255, 255, 255, 0.4);
+      border-color: transparent;
+      opacity: 0.6;
     }
 
     .hint-box {
@@ -784,37 +791,24 @@
 
     .how-it-works {
       border-top: 1px solid var(--line);
-      padding-top: 4px;
+      padding-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
     }
 
-    .how-it-works summary {
-      cursor: pointer;
+    .how-label {
       color: var(--muted);
-      font-size: 0.85rem;
-      padding: 8px 0;
-      list-style: none;
-      user-select: none;
-    }
-
-    .how-it-works summary::-webkit-details-marker {
-      display: none;
-    }
-
-    .how-it-works summary::before {
-      content: "▸ ";
-      display: inline-block;
-      transition: transform 200ms ease;
-    }
-
-    .how-it-works[open] summary::before {
-      transform: rotate(90deg);
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
     }
 
     .how-steps {
       display: flex;
       flex-direction: column;
       gap: 10px;
-      padding: 10px 0 4px;
     }
 
     .how-step {
@@ -971,8 +965,8 @@
               <button class="btn primary" id="showCreate">Create Room →</button>
               <button class="btn" id="showJoin">Join Room</button>
             </div>
-            <details class="how-it-works">
-              <summary>How it works</summary>
+            <div class="how-it-works">
+              <p class="how-label">How it works</p>
               <div class="how-steps">
                 <div class="how-step">
                   <div class="step-num">1</div>
@@ -987,7 +981,7 @@
                   <div class="step-text">Everyone guesses simultaneously — fastest correct solve wins</div>
                 </div>
               </div>
-            </details>
+            </div>
 
           <form class="form-grid hidden" id="createForm">
             <div class="field">
