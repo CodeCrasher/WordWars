@@ -106,6 +106,15 @@
       align-items: center;
       gap: 12px;
       min-width: 0;
+      cursor: pointer;
+      border-radius: 8px;
+      padding: 4px 6px;
+      margin: -4px -6px;
+      transition: background 160ms ease;
+    }
+
+    .brand:hover {
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
     }
 
     .logo {
@@ -924,7 +933,7 @@
 <body>
   <div class="app" id="app" data-theme="light">
     <header class="topbar">
-      <div class="brand">
+      <div class="brand" id="brandLogo">
         <div class="logo"><img src="WordWars.png" alt="WordWars"></div>
         <div>
           <h1>WordWars</h1>
@@ -1382,6 +1391,21 @@
       $("endRoundBtn").addEventListener("click", endRound);
       $("playAgainBtn").addEventListener("click", () => showScreen("home"));
       $("newSessionBtn").addEventListener("click", () => window.location.reload());
+
+      $("brandLogo").addEventListener("click", () => {
+        if (LOCKED_SCREENS.has(state.screen)) {
+          showToast("Game in progress — can't leave now.");
+          return;
+        }
+        if (state.screen === "lobby" || state.screen === "sessionEnd") {
+          socket.disconnect();
+          socket.connect();
+          state.room = {};
+          state.isHost = false;
+          state.playerId = null;
+        }
+        showScreen("home");
+      });
 
       document.addEventListener("keydown", handlePhysicalKey);
       initWordValidation();
