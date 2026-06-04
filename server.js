@@ -32,12 +32,144 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", uptime: process.uptime() });
 });
 
+app.get("/api/validate-word/:word", (req, res) => {
+  const word = String(req.params.word || "").trim().toUpperCase();
+  if (!isFiveLetterWord(word)) {
+    return res.json({ valid: false, reason: "not-five-letters" });
+  }
+  if (!isValidWord(word)) {
+    return res.json({ valid: false, reason: "not-a-common-word" });
+  }
+  res.json({ valid: true });
+});
+
+const VALID_WORDS = new Set([
+  "abbey","abide","abode","abort","about","above","abuse","acorn","acres","acute",
+  "adept","admit","adobe","adopt","adore","adult","after","again","agate","agent",
+  "agile","agony","agree","ahead","alarm","album","alert","algae","alibi","alien",
+  "align","alike","alive","allay","alley","allot","allow","alloy","aloft","along",
+  "aloof","aloud","alpha","alter","amber","amble","amend","angel","anger","angle",
+  "angry","anime","ankle","annex","antic","anvil","apart","apple","apply","apron",
+  "aptly","ardor","arena","argue","arid","arise","armor","aroma","arose","array",
+  "arrow","arson","artsy","ascot","ashen","asset","astir","atone","attic","audio",
+  "audit","avert","avoid","awake","award","aware","awful","awoke","axial",
+  "badge","basic","basil","basis","baste","batch","bathe","bayou","beach","beard",
+  "beast","began","begin","being","below","bench","berry","bible","birch","birth",
+  "black","blade","blame","bland","blank","blare","blast","blaze","bleak","blend",
+  "bless","bliss","block","blood","bloom","blown","board","boast","boggy","bonus",
+  "boost","booth","bound","brain","brand","brave","bread","break","breed","brief",
+  "bring","broad","broke","brook","broom","brown","brush","built","burst","butch",
+  "buyer","byway",
+  "camel","candy","cargo","carry","carve","caste","catch","cause","cedar","chain",
+  "chair","chalk","champ","chaos","charm","chart","chase","cheat","cheek","cheer",
+  "chess","chest","chief","child","chill","chimp","choir","chord","civil","clamp",
+  "clang","clash","clasp","class","claw","clean","clear","cleft","clerk","click",
+  "cliff","climb","cling","cloak","clock","close","cloth","cloud","clump","coast",
+  "cobra","color","comet","comic","comma","coral","could","count","court","cover",
+  "covet","craft","crane","crash","crave","crawl","creak","creek","crest","crisp",
+  "cross","crowd","crown","cruel","crush","crust","crypt","curly","curve","cycle",
+  "daisy","dance","deals","debut","decoy","deity","delay","delta","delve","demon",
+  "depot","depth","derby","deter","digit","dimly","dirty","disco","ditty","dodge",
+  "dogma","dolce","dowry","draft","drain","drama","drape","dream","dress","drift",
+  "drink","drive","drool","drove","drown","drugs","dryer","dully","dummy","dunce",
+  "dwarf","dwell","dying",
+  "eager","early","earth","eight","elite","email","ember","emote","empty","enact",
+  "enjoy","enter","entry","equal","equip","error","ethic","evade","event","every",
+  "exact","exert","exist","extra","exult",
+  "fable","faith","false","fancy","faint","fatal","fault","feast","feral","ferry",
+  "fetch","fever","fiber","field","fiend","fiery","fifth","fifty","fight","final",
+  "first","fixed","fjord","flame","flank","flare","flash","flask","flats","flesh",
+  "flick","fling","flint","float","flock","flood","floor","flour","flout","flown",
+  "flute","focus","foggy","force","forge","forth","forum","found","frame","frank",
+  "fraud","fresh","front","frost","froze","frugal","fruit","fumed","funny","furry",
+  "fused","fuzzy",
+  "gavel","geese","giant","giddy","given","gizmo","glacé","gland","glare","glass",
+  "glaze","gleam","glide","gloat","globe","gloom","glory","gloss","glove","gnome",
+  "going","goose","grace","grade","grain","grand","grant","grasp","grass","grave",
+  "graze","great","greed","greet","grief","grill","grimy","grind","groan","groin",
+  "grope","gross","group","growl","grown","gruel","guard","guess","guest","guide",
+  "guild","guile","guilt","guise","gusto",
+  "habit","happy","harsh","haven","heart","heavy","hedge","herbs","heron","hexed",
+  "hinge","hippo","hoist","holly","homer","honey","honor","horde","hotel","hound",
+  "hover","human","humid","hurry","hyena","hyper",
+  "ideal","igloo","image","impel","inept","infer","inner","inset","inter","inure",
+  "irony","issue",
+  "jazzy","jewel","jiffy","joint","joker","joust","judge","juice","juicy","jumpy",
+  "knack","kneel","knife","knock","known",
+  "label","lance","large","laser","latch","later","laugh","layer","leach","leafy",
+  "learn","least","ledge","legal","lemon","level","libel","light","lilac","limit",
+  "linen","liver","llama","local","lodge","lofty","logic","loose","lotus","lousy",
+  "lover","lower","lucid","lucky","lunar","lunch","lusty","lying",
+  "magic","major","maker","mambo","manic","maple","march","marsh","matte","mayor",
+  "mealy","meant","medal","media","melee","mercy","merit","metal","might","mince",
+  "minor","minus","mirth","miser","mixed","moose","moral","mossy","mourn","mouth",
+  "moody","movie","muddy","mural","music","musty","myrrh","mysql","mystic","myth",
+  "naive","nasty","naval","nerve","never","night","ninja","noble","noise","noisy",
+  "nomad","noted","novel","nudge","nymph",
+  "oaken","occur","offer","olive","onset","opera","optic","order","other","outer",
+  "ounce","ought","oxide","ozone",
+  "paddy","paint","panic","paper","party","paste","patch","pause","peace","peach",
+  "pearl","petal","petty","phase","phone","photo","piano","piece","pilot","pinch",
+  "pixel","pizza","place","plain","plane","plank","plant","plate","plaza","plead",
+  "pleat","pluck","plumb","plume","plump","plunge","plunk","plush","polar","polka",
+  "poker","posit","potent","pound","power","prank","press","price","prick","pride",
+  "prime","print","prior","prism","prize","probe","prone","prose","proud","prove",
+  "prowl","prune","psalm","puffy","pulse","punch","pupil","purge","pushy","pygmy",
+  "quack","quaff","qualm","queen","query","quest","queue","quiet","quirk","quota",
+  "quote",
+  "rabbi","radar","radio","rainy","raise","rally","ramen","raven","reach","react",
+  "rebel","reedy","regal","reign","relax","relay","relic","remit","repay","repel",
+  "rider","ridge","right","risky","rivet","robot","rocky","rogue","round","route",
+  "rover","rowdy","ruler","runny","rural","rusty",
+  "sadly","saint","salad","satin","sauce","savor","savvy","scald","scalp","scam",
+  "scamp","scant","scarf","scary","scoff","scold","scone","score","scorn","scout",
+  "scowl","scram","scrap","screw","scrub","seize","sense","serum","serve","shack",
+  "shade","shady","shake","shall","shame","shape","share","sharp","shear","sheen",
+  "sheer","shelf","shell","shift","shine","shirt","shone","shook","shore","short",
+  "shout","shrug","sight","silky","since","sixth","sixty","sized","skate","skill",
+  "skimp","skirt","skull","slant","slash","slate","slave","sleek","sleep","sleet",
+  "slick","slide","slime","sling","sloth","slump","slunk","slyly","smart","smash",
+  "smear","smell","smelt","smile","smirk","smoke","snack","snail","snake","snare",
+  "sneak","sneer","sniff","snore","snort","snowy","snuck","soapy","solar","solid",
+  "solve","songs","sonic","sorry","south","space","spade","spare","spark","spasm",
+  "speak","spear","speck","speed","spell","spend","spice","spill","spine","spire",
+  "spite","splat","split","spoke","sport","spout","spree","sprig","spunk","squad",
+  "squat","squid","stack","staff","stage","stain","stair","stake","stale","stall",
+  "stand","stank","stare","stark","start","state","steal","steam","steel","steep",
+  "steer","stern","stick","stiff","still","sting","stock","stoic","stomp","stood",
+  "store","stork","storm","story","stout","stove","strap","straw","stray","strip",
+  "strut","study","stump","stung","stunk","style","sugar","suite","sulky","sunny",
+  "super","surge","swamp","swear","sweat","sweet","swift","swine","swirl","sword",
+  "swore","syrup",
+  "table","taunt","teary","tense","thank","theme","there","these","thick","thing",
+  "think","thorn","those","three","threw","throw","thumb","tiger","tight","timer",
+  "tired","title","toast","today","token","tonic","tooth","torch","total","touch",
+  "tough","towel","tower","toxic","trail","train","trait","tramp","trash","trawl",
+  "tread","treat","trend","trial","tribe","trick","tried","tripe","troop","trout",
+  "truck","trump","trunk","truss","trust","truth","tulip","tumor","tuner","tunic",
+  "twist","tying",
+  "ultra","uncut","under","unfed","unfit","unity","unlit","until","upper","upset",
+  "urban","usage","usher","usurp","utter",
+  "vague","valid","valor","valve","vapor","vault","vaunt","vicar","vigor","viral",
+  "virus","visit","visor","vista","vivid","vocal","vodka","voice","vouch","vying",
+  "waltz","waste","watch","water","weary","weave","wedge","weird","whale","whack",
+  "wheat","wheel","where","which","while","whiff","whole","whose","wider","wield",
+  "windy","witch","witty","women","world","worry","worse","worst","worth","would",
+  "wound","wrath","wring","wrist","wrote","wryly",
+  "yacht","yearn","yeast","young","youth","yummy",
+  "zappy","zebra","zesty","zilch","zippy","zones","zoned"
+]);
+
 function normalizeWord(word) {
   return String(word || "").trim().toUpperCase();
 }
 
 function isFiveLetterWord(word) {
   return /^[A-Z]{5}$/.test(normalizeWord(word));
+}
+
+function isValidWord(word) {
+  return VALID_WORDS.has(normalizeWord(word).toLowerCase());
 }
 
 function isDisplayName(name) {
@@ -345,6 +477,7 @@ io.on("connection", (socket) => {
 
     if (pin !== DEFAULT_PIN) return callback?.({ ok: false, error: "Invalid admin PIN." });
     if (!isFiveLetterWord(word)) return callback?.({ ok: false, error: "Word must be exactly 5 alphabetic characters." });
+    if (!isValidWord(word)) return callback?.({ ok: false, error: "Please choose a common English word. Proper nouns and made-up words are not allowed." });
 
     const code = makeRoomCode();
     const room = {
@@ -420,6 +553,7 @@ io.on("connection", (socket) => {
     const totalRounds = Number(payload.totalRounds || room.config.totalRounds);
 
     if (!isFiveLetterWord(word)) return callback?.({ ok: false, error: "Word must be exactly 5 alphabetic characters." });
+    if (!isValidWord(word)) return callback?.({ ok: false, error: "Please choose a common English word. Proper nouns and made-up words are not allowed." });
     if (![60, 120, 180, 300].includes(roundTime)) return callback?.({ ok: false, error: "Invalid round timer." });
     if (!Number.isInteger(totalRounds) || totalRounds < room.currentRound + 1 || totalRounds > 10) {
       return callback?.({ ok: false, error: "Round count must be between the current round and 10." });
@@ -453,7 +587,7 @@ io.on("connection", (socket) => {
         const word = payload.word ? normalizeWord(payload.word) : room.currentRoundConfig.word;
         if (!isFiveLetterWord(word)) {
           room.status = "lobby";
-          io.to(room.code).emit("room:error", { error: "Host configured an invalid word." });
+          io.to(room.code).emit("room:error", { error: "Word must be a common English word. Proper nouns not allowed." });
           return;
         }
         startGameRound(room, {

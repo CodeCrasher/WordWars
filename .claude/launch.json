@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "diyWordle",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["/Users/ambhojshukla/Desktop/Origin/diyWordle/server.js"],
+      "port": 3000
+    }
+  ]
+}
