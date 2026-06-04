@@ -849,25 +849,7 @@
       opacity: 0.6;
     }
 
-    /* Hidden by default; overridden to flex on touch-only devices below */
     .mobile-tap-hint { display: none; }
-
-    /* Hide HTML keyboard on touch-only devices; native keyboard is used instead */
-    @media (hover: none) and (pointer: coarse) {
-      .keyboard { display: none; }
-      /* Tap-to-focus hint strip shown above the board */
-      .mobile-tap-hint {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        color: var(--muted);
-        font-size: 0.82rem;
-        padding: 6px 0 2px;
-        cursor: pointer;
-        user-select: none;
-      }
-    }
 
     /* Off-screen capture input — never visible, just focusable */
     .mobile-capture {
@@ -1861,66 +1843,6 @@
     renderBoard();
     renderKeyboard();
 
-    // ── Mobile native-keyboard support ───────────────────────────────────────
-    // On touch-only devices the HTML keyboard is hidden via CSS.
-    // A tiny off-screen <input> is kept focused so the phone's own keyboard
-    // handles all input; we forward each keystroke into the existing handleKey().
-    (function () {
-      var touchOnly = window.matchMedia("(hover: none) and (pointer: coarse)");
-      if (!touchOnly.matches) return;
-
-      var capture = $("mobileCapture");
-      var hint    = $("mobileTapHint");
-
-      function focusCapture() {
-        if (state.screen === "game") {
-          capture.focus({ preventScroll: true });
-        }
-      }
-
-      // Forward letters typed on the native keyboard
-      capture.addEventListener("input", function () {
-        var val = capture.value;
-        capture.value = "";           // clear immediately (programmatic assignment does NOT fire input again)
-        for (var i = 0; i < val.length; i++) {
-          var ch = val[i];
-          if (/^[a-zA-Z]$/.test(ch)) handleKey(ch.toUpperCase());
-        }
-      });
-
-      // Backspace and Enter/Return from the native keyboard.
-      // stopPropagation prevents the event bubbling to document's handlePhysicalKey
-      // listener, which would cause every keystroke to be processed twice.
-      capture.addEventListener("keydown", function (e) {
-        e.stopPropagation();
-        if (e.key === "Backspace") { e.preventDefault(); handleKey("BACKSPACE"); }
-        if (e.key === "Enter")     { e.preventDefault(); handleKey("ENTER"); }
-      });
-
-      // Auto-focus whenever the game screen becomes active
-      var observer = new MutationObserver(function () {
-        if ($("gameScreen").classList.contains("active")) {
-          setTimeout(focusCapture, 120);    // slight delay so animation settles
-        }
-      });
-      observer.observe($("gameScreen"), { attributes: true, attributeFilter: ["class"] });
-
-      // Tapping the board, hint strip, or hint box re-focuses the capture input
-      ["board", "hintBox", "mobileTapHint"].forEach(function (id) {
-        $(id).addEventListener("touchstart", function (e) {
-          e.preventDefault();
-          focusCapture();
-        }, { passive: false });
-      });
-
-      // Update hint label to reflect focus state
-      capture.addEventListener("focus", function () {
-        hint.textContent = "✅ Keyboard active — start typing";
-      });
-      capture.addEventListener("blur", function () {
-        hint.textContent = "⌨️ Tap here to type";
-      });
-    }());
   </script>
 </body>
 </html>
