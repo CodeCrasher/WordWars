@@ -426,12 +426,21 @@ io.on("connection", (socket) => {
     const roundTime = Number(payload.roundTime);
     const totalRounds = Number(payload.totalRounds);
 
+    const customCode = String(payload.customCode || "").trim().toUpperCase();
+
     if (pin !== DEFAULT_PIN) return callback?.({ ok: false, error: "Invalid admin PIN." });
     if (!isFiveLetterWord(word)) return callback?.({ ok: false, error: "Word must be exactly 5 alphabetic characters." });
     const wordValid = await isValidWord(word);
     if (!wordValid) return callback?.({ ok: false, error: "Please choose a real English common noun, verb, or adjective. Proper nouns (names, places, brands) are not allowed." });
 
-    const code = makeRoomCode();
+    let code;
+    if (customCode) {
+      if (!/^[A-Z0-9]{6}$/.test(customCode)) return callback?.({ ok: false, error: "Room code must be exactly 6 letters or numbers." });
+      if (rooms.has(customCode)) return callback?.({ ok: false, error: "That room code is already in use. Choose another or leave blank for a random one." });
+      code = customCode;
+    } else {
+      code = makeRoomCode();
+    }
     const room = {
       code,
       hostId: socket.id,

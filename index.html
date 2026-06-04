@@ -976,7 +976,7 @@
               <div class="how-steps">
                 <div class="how-step">
                   <div class="step-num">1</div>
-                  <div class="step-text">Host creates a private room, picks the word and category</div>
+                  <div class="step-text">Host creates a private room and picks the word</div>
                 </div>
                 <div class="how-step">
                   <div class="step-num">2</div>
@@ -1004,12 +1004,9 @@
               <span class="word-hint" id="wordInputHint"></span>
             </div>
             <div class="field">
-              <label for="categoryInput">Category</label>
-              <select id="categoryInput"></select>
-            </div>
-            <div class="field hidden" id="customCategoryWrap">
-              <label for="customCategoryInput">Custom Category</label>
-              <input id="customCategoryInput" maxlength="32" placeholder="Indie Games" autocomplete="off">
+              <label for="customCodeInput">Room Code</label>
+              <input id="customCodeInput" maxlength="6" placeholder="Leave blank for random" autocomplete="off" style="text-transform:uppercase">
+              <span class="word-hint" id="customCodeHint">6 chars — leave blank for random</span>
             </div>
             <div class="field">
               <label for="timerInput">Round Timer</label>
@@ -1029,7 +1026,7 @@
               <textarea id="hintInput" maxlength="140" placeholder="Optional hint"></textarea>
             </div>
             <div class="field full">
-              <button class="btn primary" type="submit">Create Private Room</button>
+              <button class="btn primary" type="submit" style="width:100%">Create Private Room</button>
               <div class="error" id="createError"></div>
             </div>
           </form>
@@ -1155,6 +1152,20 @@
             <div class="leader-list" id="liveLeaderboard"></div>
             <button class="btn danger hidden" id="endRoundBtn" style="width:100%; margin-top:16px;">End Round</button>
           </aside>
+        </div>
+      </section>
+
+      <section class="screen" id="solvedScreen">
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>You solved it! 🎉</h2>
+              <p class="subtitle" id="solvedSubtitle">Waiting for the round to finish…</p>
+            </div>
+          </div>
+          <div class="leader-list" id="solvedLeaderboard">
+            <div class="muted">No solves yet.</div>
+          </div>
         </div>
       </section>
 
@@ -1333,8 +1344,7 @@
     }
 
     function initControls() {
-      ["categoryInput", "adminCategory", "nextCategory"].forEach((id) => fillCategorySelect($(id)));
-      $("categoryInput").addEventListener("change", () => syncCustomVisibility("categoryInput", "customCategoryWrap"));
+      ["adminCategory", "nextCategory"].forEach((id) => fillCategorySelect($(id)));
       $("adminCategory").addEventListener("change", () => syncCustomVisibility("adminCategory", "adminCustomWrap"));
       $("nextCategory").addEventListener("change", () => syncCustomVisibility("nextCategory", "nextCustomWrap"));
 
@@ -1443,16 +1453,14 @@
     function createRoom(event) {
       event.preventDefault();
       setError("createError", "");
-      const category = $("categoryInput").value;
       socket.emit("room:create", {
         name: $("hostName").value.trim(),
         pin: $("adminPin").value,
         word: $("wordInput").value.trim(),
-        category,
-        customCategory: $("customCategoryInput").value.trim(),
         hint: $("hintInput").value.trim(),
         roundTime: Number($("timerInput").value),
-        totalRounds: Number($("roundsInput").value)
+        totalRounds: Number($("roundsInput").value),
+        customCode: $("customCodeInput").value.trim().toUpperCase()
       }, (response) => {
         if (!response?.ok) return setError("createError", response?.error || "Could not create room.");
         enterRoom(response);
@@ -1693,7 +1701,9 @@
 
       if (response.solved) {
         state.game.solved = true;
-        $("hintBox").textContent = "Solved. Waiting for the round to finish.";
+        const g = response.guessesUsed;
+        $("solvedSubtitle").textContent = `Solved in ${g} guess${g === 1 ? "" : "es"} · Waiting for the round to finish…`;
+        showScreen("solved");
         return;
       }
 
@@ -1726,7 +1736,7 @@
     }
 
     function renderLiveLeaderboard(leaderboard = []) {
-      $("liveLeaderboard").innerHTML = leaderboard.length ? leaderboard.map((entry, index) => `
+      const html = leaderboard.length ? leaderboard.map((entry, index) => `
         <div class="leader-row">
           <div>
             <strong>${index + 1}. ${escapeHtml(entry.name)}</strong>
@@ -1735,6 +1745,8 @@
           <strong>${entry.score}</strong>
         </div>
       `).join("") : `<div class="muted">No solves yet.</div>`;
+      $("liveLeaderboard").innerHTML = html;
+      $("solvedLeaderboard").innerHTML = html;
     }
 
     function renderRoundEnd(payload) {
