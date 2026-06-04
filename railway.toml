@@ -1,3 +1,7 @@
+# Required environment variable — set in Railway dashboard:
+# MW_API_KEY = your_merriam_webster_collegiate_api_key
+# Get your free key at: https://dictionaryapi.com/register/index
+
 [build]
 builder = "NIXPACKS"
 

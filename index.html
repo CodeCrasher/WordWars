@@ -1405,7 +1405,9 @@
                   hint.className = "word-hint valid";
                 } else {
                   const msg = data.reason === "not-a-common-word"
-                    ? "Not a common word — try a different one"
+                    ? "Not a valid word or is a proper noun — try another"
+                    : data.reason === "api-error"
+                    ? "Could not verify word — check connection"
                     : "Must be exactly 5 letters";
                   hint.textContent = msg;
                   hint.className = "word-hint invalid";

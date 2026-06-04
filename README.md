@@ -34,6 +34,9 @@ efficiency. Built with Node.js, Express, and Socket.io.
   PORT           → Injected by Railway automatically. Do not set.
   ADMIN_PIN      → Default: 1234. Override for production.
   ALLOWED_ORIGIN → Default: *. Set to your Railway domain in production.
+  MW_API_KEY     → Required. Merriam-Webster Collegiate Dictionary API key.
+                   Get a free key at https://dictionaryapi.com/register/index
+                   Set in Railway Dashboard → Service → Variables
 
 ## Useful Commands
   railway logs      # tail live logs
