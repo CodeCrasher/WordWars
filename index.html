@@ -199,6 +199,11 @@
       gap: 12px;
     }
 
+    .btn-row {
+      display: flex;
+      gap: 8px;
+    }
+
     .btn {
       min-height: 44px;
       border-radius: 8px;
@@ -1098,8 +1103,10 @@
                 <input id="adminRounds" type="number" min="1" max="10">
               </div>
               <div class="field full">
-                <button class="btn primary" id="startGameBtn" type="submit">Start Game</button>
-                <button class="btn" id="forceStartBtn" type="button">Force Start 10s</button>
+                <div class="btn-row">
+                  <button class="btn primary" id="startGameBtn" type="submit">Start Game</button>
+                  <button class="btn" id="forceStartBtn" type="button">Force Start 10s</button>
+                </div>
                 <div class="error" id="adminError"></div>
               </div>
             </form>
