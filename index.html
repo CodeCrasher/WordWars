@@ -417,7 +417,7 @@
     }
 
     .board {
-      width: min(420px, calc(100vw - 36px));
+      width: min(420px, calc(100vw - 68px)); /* 32px .app margins + 36px .panel padding */
       display: grid;
       grid-template-rows: repeat(6, 1fr);
       gap: 8px;
@@ -830,6 +830,9 @@
       opacity: 0.6;
     }
 
+    /* Hidden by default; overridden to flex on touch-only devices below */
+    .mobile-tap-hint { display: none; }
+
     /* Hide HTML keyboard on touch-only devices; native keyboard is used instead */
     @media (hover: none) and (pointer: coarse) {
       .keyboard { display: none; }
@@ -846,9 +849,6 @@
         user-select: none;
       }
     }
-
-    /* Hidden at all times on desktop */
-    .mobile-tap-hint { display: none; }
 
     /* Off-screen capture input — never visible, just focusable */
     .mobile-capture {
@@ -894,13 +894,15 @@
       }
 
       .key {
-        width: clamp(28px, 8vw, 42px);
+        /* (100vw - 68px container margins - 54px for 9 gaps) / 10 keys */
+        width: clamp(20px, calc((100vw - 122px) / 10), 42px);
         height: 44px;
         font-size: 0.82rem;
       }
 
       .key.wide {
-        width: clamp(54px, 16vw, 72px);
+        /* Derived: (container - 8 gaps - 7 regular keys) / 2 = 15vw - 15.3px */
+        width: clamp(30px, calc(15vw - 15.3px), 72px);
       }
     }
   </style>
