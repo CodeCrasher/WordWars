@@ -110,6 +110,18 @@ function makeRoomCode() {
   return code;
 }
 
+// Normalize a host-chosen room code: uppercase, strip anything that isn't
+// a letter or digit (spaces, punctuation, etc.).
+function normalizeRoomCode(raw) {
+  return String(raw || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+// A valid custom code is 3–6 letters/digits, so it fits the join field
+// (maxlength 6) and is short enough to share verbally.
+function isValidCustomCode(code) {
+  return /^[A-Z0-9]{3,6}$/.test(code);
+}
+
 function nowSeconds() {
   return Math.floor(Date.now() / 1000);
 }
@@ -513,7 +525,21 @@ io.on("connection", (socket) => {
     if (pin !== DEFAULT_PIN) return callback?.({ ok: false, error: "Invalid admin PIN." });
     if (![60, 120, 180, 300].includes(roundTime)) return callback?.({ ok: false, error: "Invalid round timer." });
 
-    const code = makeRoomCode();
+    // Host can pick their own room code (e.g. a word). If they leave it blank,
+    // fall back to a random code.
+    let code;
+    const hasCustomCode = payload.customCode != null && String(payload.customCode).trim() !== "";
+    if (hasCustomCode) {
+      code = normalizeRoomCode(payload.customCode);
+      if (!isValidCustomCode(code)) {
+        return callback?.({ ok: false, error: "Room code must be 3–6 letters or numbers." });
+      }
+      if (rooms.has(code)) {
+        return callback?.({ ok: false, error: "That room code is already taken — try another." });
+      }
+    } else {
+      code = makeRoomCode();
+    }
     const room = {
       code,
       hostId: socket.id,

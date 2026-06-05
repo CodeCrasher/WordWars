@@ -1390,10 +1390,27 @@
     .btn-leave:hover {
       background: color-mix(in srgb, var(--danger) 12%, transparent);
     }
-    .btn-leave--game {
-      position: absolute; top: 12px; right: 12px; z-index: 5;
-      font-size: 0.75rem; padding: 5px 10px;
+    .topbar-actions {
+      display: flex; align-items: center; gap: 12px; flex: 0 0 auto;
     }
+    .btn-leave--header {
+      font-size: 0.78rem; padding: 7px 12px;
+      min-height: 40px; white-space: nowrap;
+      display: inline-flex; align-items: center;
+    }
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 60;
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px; background: rgba(20, 12, 5, 0.55); backdrop-filter: blur(3px);
+    }
+    .modal-card {
+      width: min(380px, 100%); background: var(--panel);
+      border: 1px solid var(--line); border-radius: 14px; padding: 24px;
+      box-shadow: 0 24px 60px var(--shadow);
+    }
+    .modal-card h3 { margin: 0 0 10px; font-size: 1.2rem; }
+    .modal-card p { margin: 0 0 20px; color: var(--muted); font-size: 0.95rem; line-height: 1.5; }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
     .leave-room-footer { display: flex; justify-content: center; margin-top: 20px; }
     .chooser-indicator {
       font-size: 0.78rem; color: var(--muted);
@@ -1412,8 +1429,8 @@
     }
     @media (max-width: 480px) {
       .chooser-form { padding: 16px; }
-      .btn-leave--game { font-size: 0; padding: 6px 8px; }
-      .btn-leave--game::after { content: "✕"; font-size: 0.9rem; }
+      .btn-leave--header { font-size: 0; padding: 7px 9px; }
+      .btn-leave--header::after { content: "✕"; font-size: 0.95rem; }
     }
   </style>
 </head>
@@ -1427,7 +1444,10 @@
           <p class="subtitle">Private-room competitive Wordle for fast fingers and sharper guesses.</p>
         </div>
       </div>
-      <button class="theme-toggle" id="themeToggle" title="Toggle theme" aria-label="Toggle theme">☾</button>
+      <div class="topbar-actions">
+        <button id="leaveFromGame" class="btn btn-leave btn-leave--header hidden" title="Leave game" aria-label="Leave game">✕ Leave</button>
+        <button class="theme-toggle" id="themeToggle" title="Toggle theme" aria-label="Toggle theme">☾</button>
+      </div>
     </header>
 
     <main>
@@ -1498,6 +1518,11 @@
               <div class="field">
                 <label for="adminPin">Admin PIN</label>
                 <input id="adminPin" type="password" value="1234" autocomplete="off">
+              </div>
+              <div class="field full">
+                <label for="customCodeInput">Room Code <span style="text-transform:none;font-weight:400;opacity:0.7;">(optional)</span></label>
+                <input id="customCodeInput" maxlength="6" placeholder="Pick a word — or leave blank for random" autocomplete="off" style="text-transform:uppercase">
+                <span class="word-hint" id="customCodeHint">3–6 letters or numbers · leave blank for a random code</span>
               </div>
               <div class="field full">
                 <label for="timerInput">Round Timer</label>
@@ -1673,8 +1698,6 @@
       </section>
 
       <section class="screen" id="gameScreen">
-        <button id="leaveFromGame" class="btn btn-leave btn-leave--game"
-                title="Leave game">✕ Leave</button>
         <div class="game-wrap">
           <div class="panel game-main">
             <div class="game-meta">
@@ -1764,6 +1787,17 @@
       <p id="solveHeading" class="solve-heading"></p>
       <p id="solvePun" class="solve-pun"></p>
       <p id="solveStats" class="solve-stats"></p>
+    </div>
+  </div>
+
+  <div id="leaveModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="leaveModalTitle">
+    <div class="modal-card">
+      <h3 id="leaveModalTitle">Leave the game?</h3>
+      <p id="leaveModalText">You'll forfeit the current round and your progress will be lost.</p>
+      <div class="modal-actions">
+        <button class="btn" id="leaveCancelBtn">Cancel</button>
+        <button class="btn danger" id="leaveConfirmBtn">Leave</button>
+      </div>
     </div>
   </div>
 
@@ -1864,6 +1898,7 @@
       state.screen = name;
       document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("active"));
       $(`${name}Screen`).classList.add("active");
+      $("leaveFromGame").classList.toggle("hidden", name !== "game");
       // Only push history for navigable (non-locked) screens.
       // Locked screens (game/solved/roundEnd) are invisible to history so they
       // never appear as a back-button target and never replace a good entry.
@@ -1916,6 +1951,24 @@
 
       $("createForm").addEventListener("submit", createRoom);
       $("joinForm").addEventListener("submit", joinRoom);
+
+      // Live-sanitize the custom room code: uppercase, letters/numbers only.
+      $("customCodeInput").addEventListener("input", () => {
+        const el = $("customCodeInput");
+        const cleaned = el.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+        if (cleaned !== el.value) el.value = cleaned;
+        const hint = $("customCodeHint");
+        if (cleaned.length === 0) {
+          hint.textContent = "3–6 letters or numbers · leave blank for a random code";
+          hint.className = "word-hint";
+        } else if (cleaned.length < 3) {
+          hint.textContent = `${3 - cleaned.length} more character${3 - cleaned.length === 1 ? "" : "s"} (min 3)`;
+          hint.className = "word-hint checking";
+        } else {
+          hint.textContent = `Room code: ${cleaned}`;
+          hint.className = "word-hint valid";
+        }
+      });
       $("adminForm").addEventListener("submit", startFromAdmin);
       $("nextRoundBtn").addEventListener("click", nextRound);
       $("endRoundBtn").addEventListener("click", endRound);
@@ -2044,7 +2097,8 @@
       socket.emit("room:create", {
         name: $("hostName").value.trim(),
         pin: $("adminPin").value,
-        roundTime: Number($("timerInput").value)
+        roundTime: Number($("timerInput").value),
+        customCode: $("customCodeInput").value.trim().toUpperCase()
       }, (response) => {
         if (!response?.ok) return setError("createError", response?.error || "Could not create room.");
         enterRoom(response);
@@ -2544,23 +2598,62 @@
     });
 
     // ── Leave room ────────────────────────────────────────────────
+    // Reset all client-side round state so nothing leaks into the next session.
+    function teardownGameState() {
+      $("solveOverlay").classList.add("hidden");
+      $("countdownBanner").classList.remove("active");
+      state.game = {
+        round: 0, totalRounds: 0, roundTime: 180, remaining: 180,
+        category: "", hintAvailable: false, maxGuesses: 6,
+        currentRow: 0, currentCol: 0,
+        rows: Array.from({ length: 6 }, () => Array(5).fill("")),
+        feedback: Array.from({ length: 6 }, () => Array(5).fill("")),
+        keyState: {}, locked: true, solved: false, hint: ""
+      };
+      ["liveLeaderboard", "solvedLeaderboard", "roundLeaderboard"].forEach(id => {
+        const el = $(id); if (el) el.innerHTML = "";
+      });
+      $("timerText").textContent = "";
+      renderBoard();
+      renderKeyboard();
+    }
+
     function leaveRoom() {
+      // Tell the server to free our slot — it handles host transfer, room close,
+      // chooser skip, and ending the round for the players who remain.
       socket.emit("room:leave", {}, res => {
         if (res && !res.ok) console.warn("Leave error:", res.error);
-        state.room = null;
-        state.playerId = null;
-        state.isHost = false;
-        state.sessionId = null;
-        _histNavFlag = true;
-        showScreen("home");
       });
+      teardownGameState();
+      state.room = null;
+      state.playerId = null;
+      state.isHost = false;
+      state.sessionId = null;   // discard token so we don't auto-rejoin the room we left
+      _histNavFlag = true;
+      showScreen("home");
+    }
+
+    function openLeaveDialog() {
+      const inGame = state.screen === "game";
+      $("leaveModalTitle").textContent = inGame ? "Leave the game?" : "Leave the room?";
+      $("leaveModalText").textContent = inGame
+        ? "You'll forfeit the current round and your progress will be lost."
+        : "You'll leave this room. Remaining players keep playing.";
+      $("leaveModal").classList.remove("hidden");
+    }
+    function closeLeaveDialog() {
+      $("leaveModal").classList.add("hidden");
     }
 
     ["leaveFromLobby", "leaveFromGame", "leaveFromChooser"].forEach(id => {
       const btn = $(id);
-      if (btn) btn.addEventListener("click", () => {
-        if (confirm("Are you sure you want to leave the room?")) leaveRoom();
-      });
+      if (btn) btn.addEventListener("click", openLeaveDialog);
+    });
+    $("leaveCancelBtn").addEventListener("click", closeLeaveDialog);
+    $("leaveConfirmBtn").addEventListener("click", () => { closeLeaveDialog(); leaveRoom(); });
+    $("leaveModal").addEventListener("click", (e) => { if (e.target === $("leaveModal")) closeLeaveDialog(); });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !$("leaveModal").classList.contains("hidden")) closeLeaveDialog();
     });
 
     initControls();
