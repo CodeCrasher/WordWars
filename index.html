@@ -755,6 +755,21 @@
       opacity: 0.7;
     }
 
+    .appreciation-word {
+      font-size: 0.95rem;
+      color: var(--muted);
+      margin: 0 0 12px;
+    }
+
+    .appreciation-word span {
+      display: inline-block;
+      margin-left: 4px;
+      font-weight: 900;
+      letter-spacing: 0.18em;
+      color: var(--accent-2);
+      text-transform: uppercase;
+    }
+
     @keyframes pulse {
       0%, 100% { transform: scale(1); }
       50% { transform: scale(1.04); }
@@ -1790,6 +1805,16 @@
     </div>
   </div>
 
+  <div id="roundAppreciation" class="solve-overlay hidden">
+    <div class="solve-card">
+      <div id="appreciationEmoji" class="solve-emoji">🎉</div>
+      <p id="appreciationHeading" class="solve-heading"></p>
+      <div class="appreciation-word">The word was <span id="appreciationWord">?????</span></div>
+      <p id="appreciationPun" class="solve-pun"></p>
+      <p id="appreciationTap" class="solve-stats">Tap to see the leaderboard</p>
+    </div>
+  </div>
+
   <div id="leaveModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="leaveModalTitle">
     <div class="modal-card">
       <h3 id="leaveModalTitle">Leave the game?</h3>
@@ -1876,6 +1901,59 @@
         gone = true;
         overlay.classList.add("hidden");
         then();
+      };
+      overlay.addEventListener("click", dismiss, { once: true });
+    }
+
+    const CHOOSER_HEADINGS = ["Word Picker!", "Mastermind!", "Sneaky pick!"];
+    const CHOOSER_STUMP_PUNS = [
+      "Nobody cracked it — you absolute riddle-smith.",
+      "A clean sweep. The word stays undefeated.",
+      "You stumped the whole table. Diabolical work."
+    ];
+    const CHOOSER_SOLVED_PUNS = [
+      "A worthy puzzle — well chosen.",
+      "Tough but fair. Respect to the picker.",
+      "You gave them a real fight."
+    ];
+
+    // Round-end appreciation shown to EVERY player — solver, non-solver, and the
+    // word picker — revealing the word with a tailored pun. Persists until tap.
+    function showRoundAppreciation(payload, then) {
+      const overlay = $("roundAppreciation");
+      const board = payload.leaderboard || [];
+      const me = board.find((p) => p.id === state.playerId);
+      const isChooser = (me && me.isChooser) ||
+                        (payload.chooserId && payload.chooserId === state.playerId);
+
+      $("appreciationWord").textContent = payload.word || "?????";
+
+      if (isChooser) {
+        const guessers = board.filter((p) => !p.isChooser);
+        const solvers = guessers.filter((p) => p.solved).length;
+        $("appreciationEmoji").textContent = solvers === 0 ? "🧠" : "🎯";
+        $("appreciationHeading").textContent = pickRandom(CHOOSER_HEADINGS);
+        $("appreciationPun").textContent = solvers === 0
+          ? pickRandom(CHOOSER_STUMP_PUNS)
+          : `${solvers} of ${guessers.length} cracked your word. ${pickRandom(CHOOSER_SOLVED_PUNS)}`;
+      } else if (me && me.solved) {
+        const g = me.guessesUsed || 6;
+        $("appreciationEmoji").textContent = g <= 2 ? "🔥" : g <= 4 ? "🎉" : "😅";
+        $("appreciationHeading").textContent = SOLVE_HEADINGS[g] || "Got it!";
+        $("appreciationPun").textContent = pickRandom(SOLVE_PUNS[g] || SOLVE_PUNS[6]);
+      } else {
+        $("appreciationEmoji").textContent = "😬";
+        $("appreciationHeading").textContent = "Better luck next round!";
+        $("appreciationPun").textContent = pickRandom(FAIL_PUNS);
+      }
+
+      overlay.classList.remove("hidden");
+      let gone = false;
+      const dismiss = () => {
+        if (gone) return;
+        gone = true;
+        overlay.classList.add("hidden");
+        if (then) then();
       };
       overlay.addEventListener("click", dismiss, { once: true });
     }
@@ -2196,6 +2274,9 @@
     }
 
     function resetGameBoard(payload) {
+      // Clear any lingering round-end appreciation so it never blocks live play.
+      $("roundAppreciation").classList.add("hidden");
+      $("solveOverlay").classList.add("hidden");
       state.game = {
         round: payload.round,
         totalRounds: payload.totalRounds,
@@ -2507,7 +2588,11 @@
     });
 
     socket.on("game:timerTick", ({ remaining }) => updateTimer(remaining));
-    socket.on("game:roundEnd", (payload) => { $("solveOverlay").classList.add("hidden"); renderRoundEnd(payload); });
+    socket.on("game:roundEnd", (payload) => {
+      $("solveOverlay").classList.add("hidden");
+      renderRoundEnd(payload);            // leaderboard ready underneath
+      showRoundAppreciation(payload);     // appreciation page on top for ALL users; tap → leaderboard
+    });
     socket.on("game:sessionEnd", (payload) => { $("solveOverlay").classList.add("hidden"); renderSessionEnd(payload); });
 
     // ── Auto-rejoin after socket reconnect ───────────────────────────────────
@@ -2601,6 +2686,7 @@
     // Reset all client-side round state so nothing leaks into the next session.
     function teardownGameState() {
       $("solveOverlay").classList.add("hidden");
+      $("roundAppreciation").classList.add("hidden");
       $("countdownBanner").classList.remove("active");
       state.game = {
         round: 0, totalRounds: 0, roundTime: 180, remaining: 180,
