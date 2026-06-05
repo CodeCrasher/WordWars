@@ -1054,6 +1054,42 @@
       }
     }
 
+    /* ─── Landscape / short viewport: board and keyboard side-by-side so the
+           keyboard stays on-screen instead of falling below a scrolled fold ── */
+    @media (orientation: landscape) and (max-height: 600px) {
+      .app { padding: 8px 0 12px; }
+      .topbar { margin-bottom: 8px; padding-bottom: 6px; }
+      #gameScreen .game-wrap { grid-template-columns: 1fr; gap: 8px; }
+      #gameScreen .game-main {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        grid-template-areas:
+          "meta meta"
+          "board keyboard"
+          "board hint";
+        align-items: center;
+        column-gap: 16px;
+        row-gap: 8px;
+        justify-items: stretch;
+      }
+      #gameScreen .game-meta { grid-area: meta; width: 100%; }
+      #gameScreen .board {
+        grid-area: board;
+        width: auto;
+        height: min(calc(100dvh - 150px), 60vw);
+        gap: 5px;
+        align-self: center;
+      }
+      #gameScreen .board-row { gap: 5px; }
+      #gameScreen .hint-box { grid-area: hint; margin: 0; padding: 6px 10px; font-size: 0.78rem; }
+      #gameScreen .keyboard { grid-area: keyboard; width: 100%; gap: 5px; }
+      #gameScreen .key { height: 40px; }
+      #gameScreen .key-row { gap: 5px; }
+      #gameScreen .mobile-tap-hint { display: none; }
+      /* The Live Board sidebar drops below in landscape; keep it scrollable. */
+      #gameScreen .game-wrap > aside { width: 100%; }
+    }
+
     /* ─── Mobile polish (320px – 480px) ──────────────────────────────────── */
     @media (max-width: 480px) {
 
@@ -2147,17 +2183,21 @@
               try {
                 const res  = await fetch(`/api/validate-word/${encodeURIComponent(val)}`);
                 const data = await res.json();
-                if (data.valid) {
+                if (data.valid && data.unverified) {
+                  // Dictionary unreachable — we allow the word but flag it as unverified.
+                  hint.textContent = "Couldn't verify right now — you can still use it";
+                  hint.className = "word-hint checking";
+                } else if (data.valid) {
                   hint.textContent = "✓ Valid word";
                   hint.className = "word-hint valid";
                 } else {
                   const msg = data.reason === "not-a-common-word"
-                    ? "Not a valid word or is a proper noun — try another"
-                    : data.reason === "api-error"
-                    ? "Could not verify word — check connection"
+                    ? "Not a word we recognise — no names or places"
+                    : data.reason === "unverified"
+                    ? "Couldn't verify right now — you can still use it"
                     : "Must be exactly 5 letters";
                   hint.textContent = msg;
-                  hint.className = "word-hint invalid";
+                  hint.className = data.reason === "unverified" ? "word-hint checking" : "word-hint invalid";
                 }
               } catch {
                 hint.textContent = "";
@@ -2378,6 +2418,9 @@
     }
 
     function submitGuess() {
+      // Idempotency guard: ignore a submit while one is already in flight or the
+      // round/row is resolved (defense-in-depth on top of handleKey's lock check).
+      if (state.game.locked || state.game.solved) return;
       const guess = state.game.rows[state.game.currentRow].join("");
       if (guess.length !== 5) {
         showToast("Enter a 5-letter guess.");

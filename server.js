@@ -44,9 +44,12 @@ app.get("/api/validate-word/:word", async (req, res) => {
   if (!isFiveLetterWord(word)) return res.json({ valid: false, reason: "not-five-letters" });
   try {
     const valid = await isValidWord(word);
-    res.json(valid ? { valid: true } : { valid: false, reason: "not-a-common-word" });
+    if (valid === true) return res.json({ valid: true });
+    if (valid === false) return res.json({ valid: false, reason: "not-a-common-word" });
+    // null → couldn't verify (no key / MW outage). Don't block the user: allow with a notice.
+    return res.json({ valid: true, unverified: true, reason: "unverified" });
   } catch {
-    res.json({ valid: false, reason: "api-error" });
+    res.json({ valid: true, unverified: true, reason: "unverified" });
   }
 });
 
@@ -58,19 +61,26 @@ function isFiveLetterWord(word) {
   return /^[A-Z]{5}$/.test(normalizeWord(word));
 }
 
+// Tri-state dictionary check:
+//   true  → definitely a valid common word
+//   false → definitely NOT a word (MW responded, nothing matched) — safe to cache
+//   null  → could not verify (no key / HTTP error / network / timeout) — NEVER cached,
+//           callers should fail-open so a transient MW outage never blocks play.
 async function isValidWord(word) {
-  if (!MW_API_KEY) return false;
+  if (!MW_API_KEY) return null;
   const normalized = normalizeWord(word).toLowerCase();
   if (wordCache.has(normalized)) return wordCache.get(normalized);
 
   try {
     const url = `https://www.dictionaryapi.com/api/v3/references/collegiate/json/${encodeURIComponent(normalized)}?key=${MW_API_KEY}`;
     const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
-    if (!response.ok) { wordCache.set(normalized, false); return false; }
+    // HTTP error (5xx/429/etc.) is an UNKNOWN result — do not cache, fail-open.
+    if (!response.ok) { console.error("MW API HTTP", response.status); return null; }
 
     const data = await response.json();
     if (!Array.isArray(data) || data.length === 0 || typeof data[0] === "string") {
-      wordCache.set(normalized, false);
+      // MW answered definitively: not a known word (data[0] strings are spelling suggestions).
+      cacheWord(normalized, false);
       return false;
     }
 
@@ -87,14 +97,19 @@ async function isValidWord(word) {
       return true;
     });
 
-    if (wordCache.size > CACHE_MAX_SIZE) wordCache.delete(wordCache.keys().next().value);
-    wordCache.set(normalized, valid);
+    cacheWord(normalized, valid);
     return valid;
 
   } catch (err) {
+    // Network failure / 5s timeout abort — UNKNOWN, do not cache, fail-open.
     console.error("MW API error:", err.message);
-    return false;
+    return null;
   }
+}
+
+function cacheWord(key, value) {
+  if (wordCache.size > CACHE_MAX_SIZE) wordCache.delete(wordCache.keys().next().value);
+  wordCache.set(key, value);
 }
 
 function isDisplayName(name) {
@@ -583,6 +598,7 @@ io.on("connection", (socket) => {
     const name = String(payload.name || "").trim();
     const room = rooms.get(code);
 
+    if (socket.data.roomCode) return callback?.({ ok: false, error: "You are already in a room." });
     if (!room) return callback?.({ ok: false, error: "Room not found." });
     if (!isDisplayName(name)) return callback?.({ ok: false, error: "Name must be 3-16 alphanumeric characters." });
     if (room.players.size >= MAX_PLAYERS) return callback?.({ ok: false, error: "Room is full." });
@@ -676,9 +692,11 @@ io.on("connection", (socket) => {
       return callback?.({ ok: false, error: "Word must be exactly 5 alphabetic characters." });
     }
 
+    // Tri-state: reject only a DEFINITIVE non-word. If the dictionary can't be
+    // reached (null), fail-open so a missing key / MW outage never blocks play.
     const wordValid = await isValidWord(word);
-    if (!wordValid) {
-      return callback?.({ ok: false, error: "Please choose a real English word. Proper nouns are not allowed." });
+    if (wordValid === false) {
+      return callback?.({ ok: false, error: "That's not a word we recognise. Try a common English noun, verb, or adjective (no names or places)." });
     }
 
     const resolvedCategory = (rawCategory === "Custom" && customCategory)
@@ -729,48 +747,60 @@ io.on("connection", (socket) => {
     if (player.guesses.length >= MAX_GUESSES) return callback?.({ ok: false, error: "No guesses remaining." });
     if (!isFiveLetterWord(guess)) return callback?.({ ok: false, error: "Guess must be exactly 5 alphabetic characters." });
 
-    // Dictionary check — only when MW_API_KEY is configured.
-    if (MW_API_KEY) {
+    // Re-entrancy guard: the dictionary await below opens a race window where a
+    // rapid second guess from the same player could double-count. Reject overlap.
+    if (player.guessing) return callback?.({ ok: false, error: "Still checking your last guess — one sec." });
+    player.guessing = true;
+    try {
+      // Dictionary check (tri-state): reject only a DEFINITIVE non-word. A missing
+      // key or MW outage returns null → fail-open so play never stalls.
       const valid = await isValidWord(guess);
       if (valid === false) return callback?.({ ok: false, error: "Not a valid word. Try again." });
-    }
 
-    const answer = room.currentRoundConfig.word;
-    const feedback = makeFeedback(guess, answer);
-    player.guesses.push({ guess, feedback });
-    touchRoom(room);
+      // Re-check terminal conditions in case the round ended during the await.
+      if (room.status !== "playing") return callback?.({ ok: false, error: "No round is currently active." });
+      if (player.solved) return callback?.({ ok: false, error: "You already solved this round." });
+      if (player.guesses.length >= MAX_GUESSES) return callback?.({ ok: false, error: "No guesses remaining." });
 
-    const solved = guess === answer;
-    if (solved) {
-      const breakdown = calculateScore(room, player);
-      player.solved = true;
-      player.solvedAt = Math.max(0, nowSeconds() - room.roundStartedAt);
-      player.roundScore = breakdown.score;
-      player.cumulativeScore += breakdown.score;
-      player.breakdown = breakdown;
+      const answer = room.currentRoundConfig.word;
+      const feedback = makeFeedback(guess, answer);
+      player.guesses.push({ guess, feedback });
+      touchRoom(room);
 
-      io.to(room.code).emit("game:playerSolved", {
-        id: player.id,
-        name: player.name,
-        time: player.solvedAt,
-        score: player.roundScore,
+      const solved = guess === answer;
+      if (solved) {
+        const breakdown = calculateScore(room, player);
+        player.solved = true;
+        player.solvedAt = Math.max(0, nowSeconds() - room.roundStartedAt);
+        player.roundScore = breakdown.score;
+        player.cumulativeScore += breakdown.score;
+        player.breakdown = breakdown;
+
+        io.to(room.code).emit("game:playerSolved", {
+          id: player.id,
+          name: player.name,
+          time: player.solvedAt,
+          score: player.roundScore,
+          guessesUsed: player.guesses.length,
+          leaderboard: getLiveLeaderboard(room)
+        });
+      }
+
+      callback?.({
+        ok: true,
+        guess,
+        feedback,
+        solved,
         guessesUsed: player.guesses.length,
-        leaderboard: getLiveLeaderboard(room)
+        maxGuesses: MAX_GUESSES,
+        hint: player.guesses.length >= 3 ? room.currentRoundConfig.hint || "" : ""
       });
-    }
 
-    callback?.({
-      ok: true,
-      guess,
-      feedback,
-      solved,
-      guessesUsed: player.guesses.length,
-      maxGuesses: MAX_GUESSES,
-      hint: player.guesses.length >= 3 ? room.currentRoundConfig.hint || "" : ""
-    });
-
-    if (allActivePlayersSolved(room)) {
-      finishRound(room, "all-solved");
+      if (allActivePlayersSolved(room)) {
+        finishRound(room, "all-solved");
+      }
+    } finally {
+      player.guessing = false;
     }
   });
 
