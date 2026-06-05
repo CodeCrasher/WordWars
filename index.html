@@ -412,6 +412,20 @@
       font-size: 0.92rem;
     }
 
+    /* Compact, skribbl-style round-end score rows */
+    .score-left { min-width: 0; display: grid; gap: 2px; }
+    .score-name { font-weight: 800; line-height: 1.25; overflow-wrap: anywhere; }
+    .score-rank { color: var(--muted); }
+    .score-detail { font-size: 0.82rem; }
+    .score-right { flex: 0 0 auto; text-align: right; display: grid; gap: 1px; }
+    .score-total { font-size: 1.18rem; font-weight: 950; line-height: 1.1; font-variant-numeric: tabular-nums; }
+    .score-delta { font-size: 0.78rem; }
+    .score-delta--gain { color: var(--green); }
+    .score-row--me {
+      border-color: var(--accent-2);
+      background: color-mix(in srgb, var(--accent) 12%, var(--panel-2));
+    }
+
     .game-wrap {
       display: grid;
       grid-template-columns: minmax(300px, 1fr) 300px;
@@ -1276,13 +1290,10 @@
         transition: transform 60ms ease, opacity 60ms ease;
       }
 
-      /* FIX 7 — Round end screen */
-      #roundEndScreen {
-        overflow-y: auto;
-      }
+      /* FIX 7 — Round end screen (see also the scrollable-panel rule below) */
       #roundEndScreen .score-row {
-        font-size: 0.88rem;
-        padding: 8px 0;
+        font-size: 0.9rem;
+        padding: 9px 11px;
       }
 
       /* FIX 8 — Session end / podium screen */
@@ -1351,6 +1362,33 @@
       textarea {
         font-size: 16px !important;
       }
+    }
+
+    /* ─── Round-end leaderboard: fit the viewport, scroll the list, keep the
+           "Next Round" footer visible. Applies to narrow phones (portrait) and
+           short landscape so the panel never overflows off-screen. ──────────── */
+    @media (max-width: 600px), (max-height: 640px) {
+      #roundEndScreen .panel {
+        display: flex;
+        flex-direction: column;
+        max-height: calc(100dvh - 84px);
+        box-sizing: border-box;
+        overflow: hidden;
+      }
+      #roundEndScreen .panel-head,
+      #roundEndScreen #nextRoundNote,
+      #roundEndScreen #nextRoundCta {
+        flex: 0 0 auto;
+      }
+      #roundEndScreen #roundLeaderboard {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        margin: 10px -2px 2px;
+        padding: 0 2px;
+      }
+      #roundEndScreen #nextRoundNote { margin: 10px 0 8px; }
     }
 
     /* ─── Very small screens — iPhone SE / 320px ─────────────────────────── */
@@ -2543,20 +2581,23 @@
           : "";
         const detail = isChooser
           ? "Picked the word this round"
-          : player.solved ? `${formatTime(player.time)} · ${player.guessesUsed} guesses` : "Did not solve";
-        const breakdownLine = isChooser
-          ? `Chooser bonus ${player.breakdown.chooserBonus ?? player.score}`
-          : `Base ${player.breakdown.base} + Time ${player.breakdown.timeBonus} + Guess ${player.breakdown.guessBonus}`;
+          : player.solved
+            ? `Solved · ${formatTime(player.time)} · ${player.guessesUsed} ${player.guessesUsed === 1 ? "guess" : "guesses"}`
+            : "Did not solve";
+        // Skribbl-style: rank + name on the left, big CUMULATIVE total on the right,
+        // with this round's gain as a "+N" delta underneath.
+        const gained = player.score > 0;
+        const delta = gained ? `+${player.score}` : (isChooser ? "+0" : "—");
+        const isMe = player.id === state.playerId;
         return `
-        <div class="score-row">
-          <div>
-            <strong>${index + 1}. ${escapeHtml(player.name)}${chooserBadge}</strong>
-            <div class="muted">${detail}</div>
-            <div class="muted">${breakdownLine}</div>
+        <div class="score-row${isMe ? " score-row--me" : ""}">
+          <div class="score-left">
+            <strong class="score-name"><span class="score-rank">${index + 1}.</span> ${escapeHtml(player.name)}${chooserBadge}</strong>
+            <div class="muted score-detail">${detail}</div>
           </div>
-          <div style="text-align:right;">
-            <strong>${player.score}</strong>
-            <div class="muted">${player.cumulativeScore} total</div>
+          <div class="score-right">
+            <strong class="score-total">${player.cumulativeScore}</strong>
+            <div class="muted score-delta${gained ? " score-delta--gain" : ""}">${delta} this round</div>
           </div>
         </div>`;
       }).join("");

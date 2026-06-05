@@ -309,7 +309,10 @@ function getLiveLeaderboard(room) {
 
 function getRoundLeaderboard(room) {
   return Array.from(room.players.values())
+    // Rank by CUMULATIVE total (skribbl-style running scoreboard between rounds),
+    // tie-broken by this round's score, then solve time, then name.
     .sort((a, b) => {
+      if (b.cumulativeScore !== a.cumulativeScore) return b.cumulativeScore - a.cumulativeScore;
       if (b.roundScore !== a.roundScore) return b.roundScore - a.roundScore;
       if ((a.solvedAt || Infinity) !== (b.solvedAt || Infinity)) return (a.solvedAt || Infinity) - (b.solvedAt || Infinity);
       return a.name.localeCompare(b.name);
