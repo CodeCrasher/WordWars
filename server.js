@@ -528,6 +528,47 @@ function removeExpiredRooms() {
 
 setInterval(removeExpiredRooms, 60 * 1000);
 
+// Cleanly remove a socket's player from whatever room it's currently in.
+// Shared by room:leave and by room:join/room:create, so a user is never left
+// "stuck" already-in-a-room after navigating home without an explicit leave.
+// Returns true if the socket was actually in a (still-existing) room.
+function detachFromRoom(socket) {
+  const code = socket.data.roomCode;
+  socket.data.roomCode = null;
+  if (!code) return false;
+  socket.leave(code);
+  const room = rooms.get(code);
+  if (!room) return false; // stale pointer — room already gone
+
+  const wasChooser = socket.id === room.currentChooserId;
+  const wasHost = socket.id === room.hostId;
+
+  room.players.delete(socket.id);
+  room.playerOrder = room.playerOrder.filter(id => id !== socket.id);
+  touchRoom(room);
+
+  if (room.players.size === 0) {
+    clearRoomTimers(room);
+    rooms.delete(room.code);
+    return true;
+  }
+
+  if (wasHost) promoteOrCloseRoom(room);
+  emitPlayers(room, "room:playerLeft");
+
+  if (wasChooser && room.waitingForWord && room.status === "choosing") {
+    room.waitingForWord = false;
+    if (room.playerOrder.length > 0) startRoundRobin(room);
+  }
+  if (wasChooser && room.status === "playing") {
+    finishRound(room, "chooser-left");
+  }
+  if (room.status === "playing" && allActivePlayersSolved(room)) {
+    finishRound(room, "all-solved");
+  }
+  return true;
+}
+
 io.on("connection", (socket) => {
   // Host creates room with name, PIN, and round timer only.
   // Word, category, hint are set by each round's chooser.
@@ -582,6 +623,9 @@ io.on("connection", (socket) => {
       }
     };
 
+    // Free any previous room so creating a new one never leaves a dangling slot.
+    if (socket.data.roomCode) detachFromRoom(socket);
+
     const host = makePlayer(socket, name, true);
     room.players.set(socket.id, host);
     rooms.set(code, room);
@@ -598,14 +642,18 @@ io.on("connection", (socket) => {
     const name = String(payload.name || "").trim();
     const room = rooms.get(code);
 
-    if (socket.data.roomCode) return callback?.({ ok: false, error: "You are already in a room." });
     if (!room) return callback?.({ ok: false, error: "Room not found." });
     if (!isDisplayName(name)) return callback?.({ ok: false, error: "Name must be 3-16 alphanumeric characters." });
-    if (room.players.size >= MAX_PLAYERS) return callback?.({ ok: false, error: "Room is full." });
     if (room.status !== "lobby") return callback?.({ ok: false, error: "This game is already in progress." });
-    if (Array.from(room.players.values()).some((player) => player.name.toLowerCase() === name.toLowerCase())) {
+    if (room.players.size >= MAX_PLAYERS) return callback?.({ ok: false, error: "Room is full." });
+    if (Array.from(room.players.values()).some((player) => player.id !== socket.id && player.name.toLowerCase() === name.toLowerCase())) {
       return callback?.({ ok: false, error: "That name is already taken in this room." });
     }
+
+    // All checks passed — free any previous room (e.g. after "Play Again" navigated
+    // home without an explicit leave) so the user is never blocked as "already in a
+    // room". Done only now so a rejected join never strands them out of their room.
+    if (socket.data.roomCode && socket.data.roomCode !== code) detachFromRoom(socket);
 
     const player = makePlayer(socket, name);
     room.players.set(socket.id, player);
@@ -837,41 +885,9 @@ io.on("connection", (socket) => {
 
   // Any player can voluntarily leave the room at any time.
   socket.on("room:leave", (_payload = {}, callback) => {
-    const room = getRoomForSocket(socket);
-    if (!room) return callback?.({ ok: false, error: "Not in a room." });
-
-    const wasChooser = socket.id === room.currentChooserId;
-    const wasHost = socket.id === room.hostId;
-
-    room.players.delete(socket.id);
-    room.playerOrder = room.playerOrder.filter(id => id !== socket.id);
-    socket.leave(room.code);
-    socket.data.roomCode = null;
-    touchRoom(room);
-
+    if (!socket.data.roomCode) return callback?.({ ok: false, error: "Not in a room." });
+    detachFromRoom(socket);
     callback?.({ ok: true });
-
-    if (room.players.size === 0) {
-      clearRoomTimers(room);
-      rooms.delete(room.code);
-      return;
-    }
-
-    if (wasHost) promoteOrCloseRoom(room);
-    emitPlayers(room, "room:playerLeft");
-
-    if (wasChooser && room.waitingForWord && room.status === "choosing") {
-      room.waitingForWord = false;
-      if (room.playerOrder.length > 0) startRoundRobin(room);
-    }
-
-    if (wasChooser && room.status === "playing") {
-      finishRound(room, "chooser-left");
-    }
-
-    if (room.status === "playing" && allActivePlayersSolved(room)) {
-      finishRound(room, "all-solved");
-    }
   });
 
   // A disconnected player is marked inactive; if the host leaves, the next connected player is promoted.
