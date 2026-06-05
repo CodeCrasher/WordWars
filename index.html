@@ -1258,8 +1258,16 @@
         white-space: nowrap;
         overflow: hidden;
       }
-      .key--enter {
-        letter-spacing: -0.01em;
+      /* "ENTER" doesn't fit a ~40px key on phones — use a return glyph like ⌫.
+         Needs .key.wide.key--enter specificity to beat .key.wide's font-size. */
+      .key.wide.key--enter {
+        font-size: 0;
+        letter-spacing: 0;
+      }
+      .key.wide.key--enter::after {
+        content: "\21B5"; /* ↵ */
+        font-size: 1.2rem;
+        line-height: 1;
       }
       /* Tactile press feedback */
       .key:active {
@@ -1480,8 +1488,19 @@
     }
     @media (max-width: 480px) {
       .chooser-form { padding: 16px; }
-      .btn-leave--header { font-size: 0; padding: 7px 9px; }
-      .btn-leave--header::after { content: "✕"; font-size: 0.95rem; }
+      /* Square icon button that matches the theme toggle — a tidy pair, never cramped. */
+      .btn-leave--header {
+        width: 44px; height: 44px; min-height: 44px;
+        padding: 0; font-size: 0; border-radius: 8px;
+        justify-content: center; flex: 0 0 auto;
+      }
+      .btn-leave--header::after { content: "✕"; font-size: 1.05rem; line-height: 1; }
+      /* Keep the action buttons clear of notches / rounded corners. */
+      .topbar {
+        padding-right: max(0px, env(safe-area-inset-right, 0px));
+        padding-left:  max(0px, env(safe-area-inset-left, 0px));
+      }
+      .topbar-actions { gap: 10px; }
     }
   </style>
 </head>
