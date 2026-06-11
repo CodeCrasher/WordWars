@@ -863,6 +863,19 @@
       text-transform: uppercase;
     }
 
+    .appreciation-meaning {
+      margin: 0 0 12px;
+      padding: 8px 12px;
+      border-left: 3px solid var(--accent-2);
+      background: color-mix(in srgb, var(--accent-2) 10%, transparent);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.9rem;
+      font-style: italic;
+      line-height: 1.45;
+      text-align: left;
+    }
+
     @keyframes pulse {
       0%, 100% { transform: scale(1); }
       50% { transform: scale(1.04); }
@@ -1949,7 +1962,7 @@
           <div class="panel-head">
             <div>
               <h2>Final Podium</h2>
-              <p class="subtitle">Final scores — every player picked a word and guessed.</p>
+              <p class="subtitle" id="sessionEndSubtitle">Final scores — every player picked a word and guessed.</p>
             </div>
           </div>
           <div class="podium" id="podium"></div>
@@ -1977,6 +1990,7 @@
       <div id="appreciationEmoji" class="solve-emoji">🎉</div>
       <p id="appreciationHeading" class="solve-heading"></p>
       <div class="appreciation-word">The word was <span id="appreciationWord">?????</span></div>
+      <p id="appreciationMeaning" class="appreciation-meaning hidden"></p>
       <p id="appreciationPun" class="solve-pun"></p>
       <p id="appreciationTap" class="solve-stats">Tap to see the leaderboard</p>
     </div>
@@ -2127,6 +2141,17 @@
                         (payload.chooserId && payload.chooserId === state.playerId);
 
       $("appreciationWord").textContent = payload.word || "?????";
+
+      // Show the word's dictionary meaning when the server could fetch one.
+      const meaningEl = $("appreciationMeaning");
+      const meaning = (payload.definition || "").trim();
+      if (meaning) {
+        meaningEl.textContent = `“${meaning}”`;
+        meaningEl.classList.remove("hidden");
+      } else {
+        meaningEl.textContent = "";
+        meaningEl.classList.add("hidden");
+      }
 
       if (isChooser) {
         const guessers = board.filter((p) => !p.isChooser);
@@ -2719,6 +2744,12 @@
     }
 
     function renderSessionEnd(payload) {
+      $("sessionEndSubtitle").textContent = payload.reason === "not-enough-players"
+        ? "Everyone else left the room — game over."
+        : "Final scores — every player picked a word and guessed.";
+      if (payload.reason === "not-enough-players") {
+        showToast("Everyone else left — the game has ended.");
+      }
       const top = payload.leaderboard.slice(0, 3);
       const places = [
         { medal: "🥈", label: "2nd", item: top[1], className: "" },

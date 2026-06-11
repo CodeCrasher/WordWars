@@ -112,6 +112,33 @@ function cacheWord(key, value) {
   wordCache.set(key, value);
 }
 
+const defCache = new Map();
+
+// Fetch a short dictionary definition for a word from Merriam-Webster.
+// Returns a single concise sense string, or "" if unavailable (no key / outage /
+// not found). Cached so we never hit MW twice for the same word.
+async function getShortDef(word) {
+  if (!MW_API_KEY) return "";
+  const normalized = normalizeWord(word).toLowerCase();
+  if (defCache.has(normalized)) return defCache.get(normalized);
+  try {
+    const url = `https://www.dictionaryapi.com/api/v3/references/collegiate/json/${encodeURIComponent(normalized)}?key=${MW_API_KEY}`;
+    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!response.ok) return "";
+    const data = await response.json();
+    if (!Array.isArray(data)) return "";
+    const entry = data.find(e => typeof e === "object" && Array.isArray(e.shortdef) && e.shortdef.length);
+    let def = entry ? String(entry.shortdef[0] || "").trim() : "";
+    if (def.length > 160) def = def.slice(0, 157).trimEnd() + "…";
+    if (defCache.size > CACHE_MAX_SIZE) defCache.delete(defCache.keys().next().value);
+    defCache.set(normalized, def);
+    return def;
+  } catch (err) {
+    console.error("MW define error:", err.message);
+    return "";
+  }
+}
+
 function isDisplayName(name) {
   return /^[a-zA-Z0-9]{3,16}$/.test(String(name || "").trim());
 }
@@ -379,6 +406,7 @@ function finishRound(room, reason = "complete") {
   io.to(room.code).emit("game:roundEnd", {
     reason,
     word: room.currentRoundConfig.word,
+    definition: room.currentRoundConfig.definition || "",
     round: room.currentRound,
     totalRounds: room.config.totalRounds,
     chooserId: room.currentChooserId,
@@ -535,6 +563,26 @@ setInterval(removeExpiredRooms, 60 * 1000);
 // Shared by room:leave and by room:join/room:create, so a user is never left
 // "stuck" already-in-a-room after navigating home without an explicit leave.
 // Returns true if the socket was actually in a (still-existing) room.
+// A game needs at least two participants (a word-picker plus someone to guess).
+// If the session is in progress and only one (or zero) active player remains,
+// end the session and show the final leaderboard to whoever's left.
+function endSessionIfAbandoned(room) {
+  if (!room || !rooms.has(room.code)) return false;
+  const inProgress = ["countdown", "choosing", "playing", "round-ended"].includes(room.status);
+  if (!inProgress) return false;
+  const activeCount = Array.from(room.players.values()).filter(p => p.active && p.connected).length;
+  if (activeCount > 1) return false;
+
+  clearRoomTimers(room);
+  room.status = "session-ended";
+  room.waitingForWord = false;
+  io.to(room.code).emit("game:sessionEnd", {
+    leaderboard: getFinalLeaderboard(room),
+    reason: "not-enough-players"
+  });
+  return true;
+}
+
 function detachFromRoom(socket) {
   const code = socket.data.roomCode;
   socket.data.roomCode = null;
@@ -558,6 +606,9 @@ function detachFromRoom(socket) {
 
   if (wasHost) promoteOrCloseRoom(room);
   emitPlayers(room, "room:playerLeft");
+
+  // Only one player left in a live game → close it and show the leaderboard.
+  if (endSessionIfAbandoned(room)) return true;
 
   if (wasChooser && room.waitingForWord && room.status === "choosing") {
     room.waitingForWord = false;
@@ -755,6 +806,10 @@ io.on("connection", (socket) => {
 
     room.waitingForWord = false;
     startGameRound(room, { word, category: resolvedCategory, hint });
+    // Look up the word's meaning in the background so it's ready to reveal at
+    // round end (doesn't delay the round start).
+    const cfg = room.currentRoundConfig;
+    getShortDef(word).then(def => { if (cfg) cfg.definition = def; }).catch(() => {});
     callback?.({ ok: true });
   });
 
@@ -916,7 +971,7 @@ io.on("connection", (socket) => {
         room.playerOrder = room.playerOrder.filter(id => id !== socket.id);
         if (room.playerOrder.length > 0) {
           setTimeout(() => {
-            if (rooms.has(room.code)) startRoundRobin(room);
+            if (rooms.has(room.code) && room.status !== "session-ended") startRoundRobin(room);
           }, 1500);
         }
       }
@@ -924,6 +979,8 @@ io.on("connection", (socket) => {
 
     if (rooms.has(room.code)) {
       emitPlayers(room, "room:playerLeft");
+      // Only one player left in a live game → close it and show the leaderboard.
+      if (endSessionIfAbandoned(room)) return;
       if (room.status === "playing" && allActivePlayersSolved(room)) {
         finishRound(room, "all-solved");
       }
