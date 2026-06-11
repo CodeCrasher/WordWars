@@ -1351,16 +1351,12 @@
         white-space: nowrap;
         overflow: hidden;
       }
-      /* "ENTER" doesn't fit a ~40px key on phones — use a return glyph like ⌫.
+      /* Show the word "Enter" on a wider key with a smaller font so it fits.
          Needs .key.wide.key--enter specificity to beat .key.wide's font-size. */
       .key.wide.key--enter {
-        font-size: 0;
+        flex: 2;
+        font-size: 0.62rem;
         letter-spacing: 0;
-      }
-      .key.wide.key--enter::after {
-        content: "\21B5"; /* ↵ */
-        font-size: 1.2rem;
-        line-height: 1;
       }
       /* Tactile press feedback */
       .key:active {
@@ -1472,12 +1468,10 @@
 
     /* ─── Very small screens — iPhone SE / 320px ─────────────────────────── */
     @media (max-width: 360px) {
-      .key--enter {
-        font-size: 0;
-      }
-      .key--enter::after {
-        content: "↵";
-        font-size: 1.1rem;
+      .key.wide.key--enter {
+        flex: 2;
+        font-size: 0.5rem;
+        letter-spacing: -0.02em;
       }
 
       /* FIX 14 — Additional 320px fixes */
@@ -2553,7 +2547,7 @@
       $("keyboard").innerHTML = rows.map((letters, index) => {
         const keys = letters.split("").map((letter) => `<button class="key ${state.game.keyState[letter] || ""}" data-key="${letter}">${letter}</button>`);
         if (index === 2) {
-          keys.unshift(`<button class="key wide key--enter" data-key="ENTER">ENTER</button>`);
+          keys.unshift(`<button class="key wide key--enter" data-key="ENTER">Enter</button>`);
           keys.push(`<button class="key wide key--backspace" data-key="BACKSPACE">⌫</button>`);
         }
         return `<div class="key-row">${keys.join("")}</div>`;
