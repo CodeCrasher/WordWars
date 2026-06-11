@@ -85,10 +85,57 @@
     }
 
     .app {
+      position: relative;
+      z-index: 1;
       width: min(1180px, calc(100vw - 32px));
       min-height: 100vh;
       margin: 0 auto;
       padding: 24px 0 40px;
+    }
+
+    /* ─── Floating Scrabble-tile background ──────────────────────────────── */
+    .floating-letters {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .float-tile {
+      position: absolute;
+      bottom: -90px;
+      display: grid;
+      place-items: center;
+      border-radius: 9px;
+      background: linear-gradient(150deg, #f4e4c1 0%, #ecd6a9 55%, #e2c891 100%);
+      color: #5a3a1b;
+      font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
+      font-weight: 800;
+      box-shadow:
+        inset 2px 2px 1px rgba(255, 255, 255, 0.55),
+        inset -2px -3px 3px rgba(90, 58, 27, 0.25),
+        0 4px 9px rgba(40, 20, 5, 0.18);
+      opacity: 0;
+      animation-name: floatUp;
+      animation-timing-function: linear;
+      animation-iteration-count: infinite;
+      will-change: transform, opacity;
+    }
+    .float-tile sub {
+      font-size: 0.42em;
+      font-weight: 700;
+      vertical-align: sub;
+      margin-left: 1px;
+      opacity: 0.8;
+    }
+    @keyframes floatUp {
+      0%   { transform: translateY(0) rotate(var(--rot0)); opacity: 0; }
+      12%  { opacity: var(--maxop); }
+      88%  { opacity: var(--maxop); }
+      100% { transform: translateY(calc(-100vh - 200px)) rotate(var(--rot1)); opacity: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .float-tile { animation: none; opacity: 0.07; transform: none; bottom: auto; top: var(--rest, 40%); }
     }
 
     .topbar {
@@ -481,36 +528,56 @@
     }
 
     .tile {
+      position: relative;
       display: grid;
       place-items: center;
-      border-radius: 8px;
-      border: 2px solid var(--line);
-      background: var(--tile);
+      border-radius: 9px;
+      border: none;
+      background: color-mix(in srgb, var(--tile) 86%, var(--line));
       color: var(--text);
-      font-size: clamp(1.4rem, 7vw, 2.25rem);
-      font-weight: 950;
+      font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
+      font-size: clamp(1.4rem, 7vw, 2.2rem);
+      font-weight: 800;
       text-transform: uppercase;
+      box-shadow: inset 0 0 0 1.5px var(--line), inset 0 2px 5px rgba(40, 20, 5, 0.10);
       transform-style: preserve-3d;
-      transition: transform 360ms ease, background 220ms ease, border-color 220ms ease;
+      transition: transform 360ms ease, background 220ms ease, box-shadow 220ms ease, color 220ms ease;
       user-select: none;
       will-change: transform;
       -webkit-backface-visibility: hidden;
       backface-visibility: hidden;
     }
 
+    /* A placed letter becomes a raised wooden Scrabble tile */
     .tile.filled {
-      border-color: var(--accent-2);
+      background: linear-gradient(150deg, #f4e4c1 0%, #ecd6a9 55%, #e2c891 100%);
+      color: #5a3a1b;
+      box-shadow:
+        inset 2px 2px 1px rgba(255, 255, 255, 0.6),
+        inset -2px -3px 3px rgba(90, 58, 27, 0.28),
+        0 3px 0 rgba(90, 58, 27, 0.40),
+        0 5px 9px rgba(40, 20, 5, 0.30);
+    }
+
+    /* Scrabble point value, tucked in the corner */
+    .tile-pts {
+      position: absolute;
+      right: 7%;
+      bottom: 5%;
+      font-size: 0.3em;
+      font-weight: 700;
+      line-height: 1;
+      opacity: 0.85;
     }
 
     .tile.active {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+      box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
       animation: tileCursor 1s ease-in-out infinite;
     }
 
     @keyframes tileCursor {
-      0%, 100% { border-color: var(--accent); }
-      50%       { border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+      0%, 100% { box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+      50%      { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent), 0 0 0 3px transparent; }
     }
 
     .tile.reveal {
@@ -518,21 +585,33 @@
     }
 
     .tile.green {
-      background: var(--green);
-      border-color: var(--green);
+      background: linear-gradient(150deg, color-mix(in srgb, var(--green) 72%, #fff), var(--green));
       color: #fff;
+      box-shadow:
+        inset 2px 2px 1px rgba(255, 255, 255, 0.35),
+        inset -2px -3px 3px rgba(0, 0, 0, 0.28),
+        0 3px 0 rgba(0, 0, 0, 0.30),
+        0 5px 9px rgba(0, 0, 0, 0.26);
     }
 
     .tile.yellow {
-      background: var(--yellow);
-      border-color: var(--yellow);
+      background: linear-gradient(150deg, color-mix(in srgb, var(--yellow) 72%, #fff), var(--yellow));
       color: #15120a;
+      box-shadow:
+        inset 2px 2px 1px rgba(255, 255, 255, 0.4),
+        inset -2px -3px 3px rgba(0, 0, 0, 0.25),
+        0 3px 0 rgba(0, 0, 0, 0.26),
+        0 5px 9px rgba(0, 0, 0, 0.22);
     }
 
     .tile.gray {
-      background: var(--gray);
-      border-color: var(--gray);
+      background: linear-gradient(150deg, color-mix(in srgb, var(--gray) 75%, #fff), var(--gray));
       color: #fff;
+      box-shadow:
+        inset 2px 2px 1px rgba(255, 255, 255, 0.22),
+        inset -2px -3px 3px rgba(0, 0, 0, 0.3),
+        0 3px 0 rgba(0, 0, 0, 0.3),
+        0 5px 9px rgba(0, 0, 0, 0.26);
     }
 
     .keyboard {
@@ -1543,6 +1622,7 @@
   </style>
 </head>
 <body>
+  <div class="floating-letters" id="floatingLetters" aria-hidden="true"></div>
   <div class="app" id="app" data-theme="light">
     <header class="topbar">
       <div class="brand" id="brandLogo">
@@ -1972,6 +2052,39 @@
 
     function pickRandom(arr) {
       return arr[Math.floor(Math.random() * arr.length)];
+    }
+
+    // Scrabble letter point values (shown in the corner of each tile)
+    const SCRABBLE_VALUES = {
+      A:1, B:3, C:3, D:2, E:1, F:4, G:2, H:4, I:1, J:8, K:5, L:1, M:3,
+      N:1, O:1, P:3, Q:10, R:1, S:1, T:1, U:1, V:4, W:4, X:8, Y:4, Z:10
+    };
+
+    // Build the drifting Scrabble-tile background.
+    function initFloatingLetters() {
+      const container = $("floatingLetters");
+      if (!container) return;
+      const bag = "AAAEEEIIOONNRRSTTLUDGCMPBHKWFYVZJXQ".split("");
+      const count = window.innerWidth < 600 ? 11 : 18;
+      const tiles = [];
+      for (let i = 0; i < count; i++) {
+        const L = bag[Math.floor(Math.random() * bag.length)];
+        const size = 30 + Math.random() * 46;          // 30–76px
+        const left = Math.random() * 100;              // vw %
+        const dur = 18 + Math.random() * 22;           // 18–40s
+        const delay = -Math.random() * dur;            // staggered (already mid-flight)
+        const rest = (10 + Math.random() * 70).toFixed(1); // reduced-motion resting spot
+        const rot0 = (Math.random() * 36 - 18).toFixed(1);
+        const rot1 = (Math.random() * 70 - 35).toFixed(1);
+        const maxop = (0.08 + Math.random() * 0.11).toFixed(2);
+        tiles.push(
+          `<div class="float-tile" style="left:${left}%;width:${size}px;height:${size}px;` +
+          `font-size:${(size * 0.5).toFixed(1)}px;animation-duration:${dur}s;animation-delay:${delay}s;` +
+          `--rot0:${rot0}deg;--rot1:${rot1}deg;--maxop:${maxop};--rest:${rest}%">` +
+          `${L}<sub>${SCRABBLE_VALUES[L]}</sub></div>`
+        );
+      }
+      container.innerHTML = tiles.join("");
     }
 
     function showSolveOverlay(solved, guessesUsed, then) {
@@ -2428,7 +2541,8 @@
             const color = state.game.feedback[rowIndex][colIndex];
             const isCursor = canType && rowIndex === state.game.currentRow && colIndex === state.game.currentCol;
             const classes = ["tile", isCursor ? "active" : "", letter ? "filled" : "", color || ""].filter(Boolean).join(" ");
-            return `<div class="${classes}" data-row="${rowIndex}" data-col="${colIndex}">${escapeHtml(letter)}</div>`;
+            const pts = letter ? `<sub class="tile-pts">${SCRABBLE_VALUES[letter] || ""}</sub>` : "";
+            return `<div class="${classes}" data-row="${rowIndex}" data-col="${colIndex}">${escapeHtml(letter)}${pts}</div>`;
           }).join("")}
         </div>
       `).join("");
@@ -2846,6 +2960,7 @@
     });
 
     initControls();
+    initFloatingLetters();
     renderBoard();
     renderKeyboard();
 
