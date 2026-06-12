@@ -805,11 +805,26 @@ io.on("connection", (socket) => {
       ? customCategory : rawCategory;
 
     room.waitingForWord = false;
-    startGameRound(room, { word, category: resolvedCategory, hint });
-    // Look up the word's meaning in the background so it's ready to reveal at
-    // round end (doesn't delay the round start).
-    const cfg = room.currentRoundConfig;
-    getShortDef(word).then(def => { if (cfg) cfg.definition = def; }).catch(() => {});
+    // Fetch the word's meaning UP FRONT so it's guaranteed available to EVERY
+    // player (the chooser too) when the round ends — even on a fast round.
+    // Cap the wait so a slow dictionary never holds up the round more than ~2.5s;
+    // if it's still pending, keep fetching so it's ready before the round ends.
+    const defPromise = getShortDef(word);
+    let definition = "";
+    try {
+      definition = await Promise.race([
+        defPromise,
+        new Promise(res => setTimeout(() => res(null), 2500))
+      ]);
+    } catch { definition = ""; }
+    const stillPending = definition === null;
+    if (stillPending) definition = "";
+
+    startGameRound(room, { word, category: resolvedCategory, hint, definition });
+    if (stillPending) {
+      const cfg = room.currentRoundConfig;
+      defPromise.then(d => { if (cfg) cfg.definition = d; }).catch(() => {});
+    }
     callback?.({ ok: true });
   });
 
