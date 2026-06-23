@@ -2046,6 +2046,15 @@
     </div>
   </div>
 
+  <div id="hintPopup" class="solve-overlay hidden">
+    <div class="solve-card">
+      <div class="solve-emoji">💡</div>
+      <p class="solve-heading">Hint unlocked!</p>
+      <p id="hintPopupText" class="appreciation-meaning"></p>
+      <p class="solve-stats">Tap to keep guessing</p>
+    </div>
+  </div>
+
   <div id="leaveModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="leaveModalTitle">
     <div class="modal-card">
       <h3 id="leaveModalTitle">Leave the game?</h3>
@@ -2090,7 +2099,8 @@
         keyState: {},
         locked: false,
         solved: false,
-        hint: ""
+        hint: "",
+        hintShown: false
       }
     };
 
@@ -2570,9 +2580,10 @@
     }
 
     function resetGameBoard(payload) {
-      // Clear any lingering round-end appreciation so it never blocks live play.
+      // Clear any lingering overlays so they never block live play.
       $("roundAppreciation").classList.add("hidden");
       $("solveOverlay").classList.add("hidden");
+      $("hintPopup").classList.add("hidden");
       // Round started — drop any pending round-end handoff. A player who never
       // tapped "continue" lands straight in the game from here.
       state.pendingChoosing = null;
@@ -2593,7 +2604,8 @@
         keyState: {},
         locked: false,
         solved: false,
-        hint: ""
+        hint: "",
+        hintShown: false
       };
       $("gameCategory").textContent = payload.category;
       $("roundBadge").textContent = `Round ${payload.round}/${payload.totalRounds}`;
@@ -2725,6 +2737,12 @@
       if (response.hint) {
         state.game.hint = response.hint;
         $("hintBox").textContent = `Hint: ${response.hint}`;
+        // First time the hint unlocks (after 3 tries) and we haven't just solved:
+        // surface it as a popup that stays until the player taps to keep guessing.
+        if (!state.game.hintShown && !response.solved) {
+          state.game.hintShown = true;
+          showHintPopup(response.hint);
+        }
       }
 
       if (response.solved) {
@@ -2742,6 +2760,16 @@
         $("hintBox").textContent = "Out of guesses. Waiting for the round to end.";
         showSolveOverlay(false, state.game.maxGuesses, () => {});
       }
+    }
+
+    // Hint popup — surfaced once when the picker's hint unlocks (after 3 tries).
+    // Stays on screen until the player taps it, then they keep guessing.
+    function showHintPopup(text) {
+      const overlay = $("hintPopup");
+      $("hintPopupText").textContent = `“${text}”`;
+      overlay.classList.remove("hidden");
+      const dismiss = () => { overlay.classList.add("hidden"); overlay.removeEventListener("click", dismiss); };
+      overlay.addEventListener("click", dismiss);
     }
 
     function updateKeyState(letter, color) {
@@ -3101,6 +3129,7 @@
     function teardownGameState() {
       $("solveOverlay").classList.add("hidden");
       $("roundAppreciation").classList.add("hidden");
+      $("hintPopup").classList.add("hidden");
       $("countdownBanner").classList.remove("active");
       state.game = {
         round: 0, totalRounds: 0, roundTime: 180, remaining: 180,
@@ -3108,7 +3137,7 @@
         currentRow: 0, currentCol: 0,
         rows: Array.from({ length: 6 }, () => Array(5).fill("")),
         feedback: Array.from({ length: 6 }, () => Array(5).fill("")),
-        keyState: {}, locked: true, solved: false, hint: ""
+        keyState: {}, locked: true, solved: false, hint: "", hintShown: false
       };
       ["liveLeaderboard", "solvedLeaderboard", "roundLeaderboard"].forEach(id => {
         const el = $(id); if (el) el.innerHTML = "";
