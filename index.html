@@ -1561,6 +1561,51 @@
       0%,80%,100% { transform: scale(0.6); opacity: 0.4; }
       40%         { transform: scale(1);   opacity: 1;   }
     }
+    /* Phase 1 — live standings on the "X is choosing…" wait screen */
+    .wait-standings-wrap { margin-top: 18px; }
+    .wait-standings-title {
+      font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--muted); font-weight: 800; margin: 0 0 8px; text-align: center;
+    }
+    .wait-standings { display: flex; flex-direction: column; gap: 6px; }
+    .standing-row {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; padding: 8px 12px; border-radius: 10px;
+      background: var(--panel); border: 1px solid var(--line);
+    }
+    .standing-row--me { border-color: var(--accent-2); background: color-mix(in srgb, var(--accent-2) 12%, transparent); }
+    .standing-row--off { opacity: 0.5; }
+    .standing-name { font-weight: 700; font-size: 0.9rem; display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .standing-name > :last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .standing-rank { color: var(--muted); font-weight: 800; }
+    .standing-score { font-weight: 900; color: var(--accent-2); }
+    .standing-tag { font-size: 0.72rem; color: var(--muted); font-weight: 700; white-space: nowrap; }
+
+    /* Phase 2 — live per-player attempt progress during the round */
+    .round-progress { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+    .progress-row {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; padding: 8px 12px; border-radius: 10px;
+      background: var(--panel); border: 1px solid var(--line);
+    }
+    .progress-row--me { border-color: var(--accent-2); }
+    .progress-name { font-weight: 700; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .progress-tag { font-size: 0.74rem; color: var(--muted); font-weight: 700; white-space: nowrap; }
+    .progress-solved { font-size: 0.82rem; font-weight: 800; color: var(--ok, #3a9d5a); white-space: nowrap; }
+    .progress-attempts { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+    .attempt-dots { letter-spacing: 2px; color: var(--accent-2); font-size: 0.7rem; }
+    .progress-count { font-size: 0.78rem; color: var(--muted); font-weight: 700; }
+    /* Word-picker spectator layout: drop the board/keyboard grid, center the live
+       board so the screen reads as a deliberate "you're watching" view. */
+    #gameScreen .game-main.spectating {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: calc(100dvh - 150px);
+    }
+    #gameScreen .game-main.spectating .game-meta { width: min(520px, 100%); align-self: center; }
+    #gameScreen .game-main.spectating #roundProgress { margin-top: auto; width: min(520px, 100%); align-self: center; }
+    #gameScreen .game-main.spectating .chooser-indicator { margin-bottom: auto; }
     .error-msg {
       color: var(--danger); font-size: 0.85rem; font-weight: 600;
     }
@@ -1884,6 +1929,10 @@
               </div>
               <p id="chooserWaitRound" class="chooser-round-label">Round 1</p>
             </div>
+            <div class="wait-standings-wrap">
+              <p class="wait-standings-title">Standings</p>
+              <div id="waitStandings" class="wait-standings"></div>
+            </div>
           </div>
 
         </div>
@@ -1902,6 +1951,7 @@
               </div>
               <div class="timer" id="timerText">3:00</div>
             </div>
+            <div class="round-progress hidden" id="roundProgress"></div>
             <div class="board" id="board"></div>
             <div class="hint-box" id="hintBox">Hint available after 3 failed guesses.</div>
             <div class="mobile-tap-hint" id="mobileTapHint">⌨️ Tap here to type</div>
@@ -2566,7 +2616,19 @@
       }
       $("hintBox").textContent = payload.hintAvailable ? "Hint available after 3 failed guesses." : "No hint this round.";
       $("endRoundBtn").classList.toggle("hidden", !state.isHost);
-      $("liveLeaderboard").innerHTML = `<div class="muted">No solves yet.</div>`;
+      // The picker can't guess, so swap their dead board/keyboard for the live
+      // spectator panel. Guessers keep their board untouched (zero layout risk)
+      // and watch via the side panel on desktop. Toggled every round, so a player
+      // who picked last round gets their board back when they're guessing.
+      const youChose = payload.chooserId === state.playerId;
+      $("roundProgress").classList.toggle("hidden", !youChose);
+      ["board", "keyboard", "hintBox", "mobileTapHint"].forEach((id) =>
+        $(id).classList.toggle("hidden", youChose));
+      // Category is a hint for guessers — pointless to the picker who chose the word.
+      $("gameCategory").classList.toggle("hidden", youChose);
+      // Center the picker's view on just the live board (clean spectator layout).
+      document.querySelector("#gameScreen .game-main").classList.toggle("spectating", youChose);
+      applyProgress(payload.progress);
       renderBoard();
       renderKeyboard();
       updateTimer(payload.roundTime);
@@ -2700,20 +2762,6 @@
       state.game.remaining = remaining;
       $("timerText").textContent = formatTime(remaining);
       $("timerText").classList.toggle("danger", remaining <= 30);
-    }
-
-    function renderLiveLeaderboard(leaderboard = []) {
-      const html = leaderboard.length ? leaderboard.map((entry, index) => `
-        <div class="leader-row">
-          <div>
-            <strong>${index + 1}. ${escapeHtml(entry.name)}</strong>
-            <div class="muted">${formatTime(entry.time)} · ${entry.guessesUsed} guesses</div>
-          </div>
-          <strong>${entry.score}</strong>
-        </div>
-      `).join("") : `<div class="muted">No solves yet.</div>`;
-      $("liveLeaderboard").innerHTML = html;
-      $("solvedLeaderboard").innerHTML = html;
     }
 
     function renderRoundEnd(payload) {
@@ -2868,11 +2916,14 @@
     });
 
     socket.on("game:playerSolved", (payload) => {
-      renderLiveLeaderboard(payload.leaderboard);
+      applyProgress(payload.progress);
       if (payload.id !== state.playerId) {
         showToast(`🎉 ${payload.name} solved it!`);
       }
     });
+
+    // Live attempt feed — refresh the spectator panels on every guess.
+    socket.on("game:guessProgress", (payload) => applyProgress(payload.progress));
 
     socket.on("game:timerTick", ({ remaining }) => updateTimer(remaining));
     socket.on("game:roundEnd", (payload) => {
@@ -2904,7 +2955,8 @@
     // ── game:choosingWord ─────────────────────────────────────────
     // Switch to the word-choosing screen: the chooser gets the pick panel,
     // everyone else gets the "X is choosing…" wait panel.
-    function enterChoosingScreen({ chooserId, chooserName, round, totalRounds }) {
+    function enterChoosingScreen(payload) {
+      const { chooserId, chooserName, round, totalRounds, standings } = payload;
       showScreen("chooser");
       const isChooser = chooserId === state.playerId;
       const label = `Round ${round} of ${totalRounds}`;
@@ -2924,7 +2976,58 @@
         $("chooserWaitName").textContent = chooserName;
         $("chooserWaitRound").textContent = label;
         $("chooserWaitAvatar").textContent = (chooserName || "?").charAt(0).toUpperCase();
+        renderWaitStandings(standings);
       }
+    }
+
+    // Phase 1: live standings on the "X is choosing the word…" wait screen so
+    // idle players watch the scoreboard instead of a spinner.
+    function renderWaitStandings(standings) {
+      const wrap = $("waitStandings");
+      if (!wrap) return;
+      if (!Array.isArray(standings) || !standings.length) { wrap.innerHTML = ""; return; }
+      wrap.innerHTML = standings.map((p, i) => {
+        const me = p.id === state.playerId;
+        const tag = p.isChooser ? `<span class="standing-tag">✍️ picking…</span>` : "";
+        const off = p.connected === false ? " standing-row--off" : "";
+        return `<div class="standing-row${me ? " standing-row--me" : ""}${off}">
+          <span class="standing-name"><span class="standing-rank">${i + 1}.</span> ${escapeHtml(p.name)}${tag}</span>
+          <span class="standing-score">${p.cumulativeScore}</span>
+        </div>`;
+      }).join("");
+    }
+
+    // Phase 2: live per-player attempt progress for the current round. Rendered
+    // wherever a spectator is watching — the picker's panel, the desktop side
+    // board, and the "you solved it" screen. Letters are never shown, only counts.
+    function attemptDots(used, max) {
+      let dots = "";
+      for (let i = 0; i < max; i++) dots += i < used ? "●" : "○";
+      return `<span class="attempt-dots">${dots}</span>`;
+    }
+    function applyProgress(progress) {
+      if (!Array.isArray(progress)) return;
+      const max = state.game.maxGuesses || 6;
+      const html = progress.map((p) => {
+        const me = p.id === state.playerId;
+        if (p.isChooser) {
+          return `<div class="progress-row${me ? " progress-row--me" : ""}">
+            <span class="progress-name">${escapeHtml(p.name)}</span>
+            <span class="progress-tag">✍️ word picker</span>
+          </div>`;
+        }
+        const status = p.solved
+          ? `<span class="progress-solved">✓ ${p.score} pts</span>`
+          : `<span class="progress-attempts">${attemptDots(p.guessesUsed, max)} <span class="progress-count">${p.guessesUsed}/${max}</span></span>`;
+        return `<div class="progress-row${me ? " progress-row--me" : ""}">
+          <span class="progress-name">${escapeHtml(p.name)}</span>
+          ${status}
+        </div>`;
+      }).join("");
+      ["roundProgress", "liveLeaderboard", "solvedLeaderboard"].forEach((id) => {
+        const el = $(id);
+        if (el) el.innerHTML = html;
+      });
     }
 
     socket.on("game:choosingWord", (payload) => {

@@ -378,6 +378,46 @@ function getFinalLeaderboard(room) {
     }));
 }
 
+// Cumulative standings shown on the "waiting while X chooses" screen so idle
+// players watch the scoreboard instead of a spinner. Ranked by running total.
+function getChoosingStandings(room) {
+  return Array.from(room.players.values())
+    .filter((p) => p.active)
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      cumulativeScore: p.cumulativeScore,
+      isChooser: p.id === room.currentChooserId,
+      connected: p.connected
+    }))
+    .sort((a, b) => b.cumulativeScore - a.cumulativeScore || a.name.localeCompare(b.name));
+}
+
+// Live per-player progress for the CURRENT round (attempt counts + solves), so
+// the word-picker (and anyone already done) can watch the race. Letters are
+// never included — only how many guesses each player has used. Solved players
+// rank first by solve time, then the rest by guesses used.
+function getRoundProgress(room) {
+  return Array.from(room.players.values())
+    .filter((p) => p.active)
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      isChooser: p.id === room.currentChooserId,
+      solved: p.solved,
+      guessesUsed: p.guesses.length,
+      score: p.roundScore,
+      time: p.solvedAt
+    }))
+    .sort((a, b) => {
+      if (a.isChooser !== b.isChooser) return a.isChooser ? 1 : -1; // picker last
+      if (a.solved !== b.solved) return a.solved ? -1 : 1;          // solved first
+      if (a.solved && b.solved) return (a.time ?? Infinity) - (b.time ?? Infinity);
+      if (a.guessesUsed !== b.guessesUsed) return b.guessesUsed - a.guessesUsed;
+      return a.name.localeCompare(b.name);
+    });
+}
+
 function clearRoomTimers(room) {
   if (room.timerInterval) clearInterval(room.timerInterval);
   if (room.countdownInterval) clearInterval(room.countdownInterval);
@@ -480,7 +520,8 @@ function startGameRound(room, roundConfig = null) {
     timerStart: room.roundStartedAt,
     chooserId: room.currentChooserId,
     chooserName: room.players.get(room.currentChooserId)?.name || "",
-    players: getPublicPlayers(room)
+    players: getPublicPlayers(room),
+    progress: getRoundProgress(room)
   });
 
   io.to(room.code).emit("game:timerTick", { remaining: room.config.roundTime });
@@ -521,7 +562,8 @@ function startRoundRobin(room) {
     chooserId,
     chooserName: chooser ? chooser.name : "Unknown",
     round: nextRoundNumber,
-    totalRounds: room.config.totalRounds
+    totalRounds: room.config.totalRounds,
+    standings: getChoosingStandings(room)
   });
 
   const chooserSocket = io.sockets.sockets.get(chooserId);
@@ -897,9 +939,14 @@ io.on("connection", (socket) => {
           time: player.solvedAt,
           score: player.roundScore,
           guessesUsed: player.guesses.length,
-          leaderboard: getLiveLeaderboard(room)
+          leaderboard: getLiveLeaderboard(room),
+          progress: getRoundProgress(room)
         });
       }
+
+      // Live spectator feed: every guess updates the attempt counts the picker
+      // (and solved players) are watching. Never includes the guessed letters.
+      io.to(room.code).emit("game:guessProgress", { progress: getRoundProgress(room) });
 
       callback?.({
         ok: true,
