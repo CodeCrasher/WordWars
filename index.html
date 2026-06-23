@@ -2020,6 +2020,11 @@
       sessionId: null,   // immutable token returned by server; survives socket reconnects
       isHost: false,
       room: null,
+      // Round-end → next-round handoff. The leaderboard persists until the player
+      // taps to continue or the next round starts; these track that pending state.
+      pendingChoosing: null,   // stashed game:choosingWord payload while on the leaderboard
+      leaderboardTapped: false, // player tapped "continue" before choosing was announced
+      isFinalRound: false,      // suppress tap-to-continue on the last round
       game: {
         round: 0,
         totalRounds: 1,
@@ -2131,8 +2136,14 @@
       "You gave them a real fight."
     ];
 
+    // How long the appreciation card holds before it auto-reveals the leaderboard
+    // underneath. Players can tap to dismiss sooner; either way the round
+    // leaderboard becomes visible well before the next round starts.
+    const APPRECIATION_HOLD_MS = 3500;
+
     // Round-end appreciation shown to EVERY player — solver, non-solver, and the
-    // word picker — revealing the word with a tailored pun. Persists until tap.
+    // word picker — revealing the word (and its meaning) with a tailored pun.
+    // Auto-dismisses after a few seconds so the leaderboard is always seen.
     function showRoundAppreciation(payload, then) {
       const overlay = $("roundAppreciation");
       const board = payload.leaderboard || [];
@@ -2174,13 +2185,19 @@
 
       overlay.classList.remove("hidden");
       let gone = false;
+      let autoTimer = null;
       const dismiss = () => {
         if (gone) return;
         gone = true;
+        if (autoTimer) clearTimeout(autoTimer);
+        overlay.removeEventListener("click", dismiss);
         overlay.classList.add("hidden");
         if (then) then();
       };
-      overlay.addEventListener("click", dismiss, { once: true });
+      overlay.addEventListener("click", dismiss);
+      // Auto-reveal the leaderboard underneath after a short hold so players who
+      // don't tap still get to study the standings before the next round begins.
+      autoTimer = setTimeout(dismiss, APPRECIATION_HOLD_MS);
     }
 
     function escapeHtml(value) {
@@ -2506,6 +2523,11 @@
       // Clear any lingering round-end appreciation so it never blocks live play.
       $("roundAppreciation").classList.add("hidden");
       $("solveOverlay").classList.add("hidden");
+      // Round started — drop any pending round-end handoff. A player who never
+      // tapped "continue" lands straight in the game from here.
+      state.pendingChoosing = null;
+      state.leaderboardTapped = false;
+      state.isFinalRound = false;
       state.game = {
         round: payload.round,
         totalRounds: payload.totalRounds,
@@ -2735,13 +2757,36 @@
         </div>`;
       }).join("");
 
-      const hasNext = payload.round < payload.totalRounds;
-      $("nextRoundNote").textContent = hasNext
-        ? "Next round starts in a moment — the next player will pick the word."
-        : "Final scores coming up…";
-      $("nextRoundCta").classList.toggle("hidden", !hasNext || !state.isHost);
+      // The leaderboard now persists. Reset the handoff state and show a
+      // tap-to-continue prompt (suppressed on the final round, which auto-rolls
+      // into the final scoreboard). The legacy host-only "Next Round" button is
+      // retired — tapping anywhere on the board advances for everyone.
+      state.pendingChoosing = null;
+      state.leaderboardTapped = false;
+      state.isFinalRound = payload.round >= payload.totalRounds;
+      $("nextRoundCta").classList.add("hidden");
+      $("nextRoundNote").textContent = state.isFinalRound
+        ? "Final scores coming up…"
+        : "Tap anywhere to continue →";
       showScreen("roundEnd");
     }
+
+    // Leave the round-end leaderboard when the player taps. If the next chooser
+    // has already been announced, go straight to the choosing screen; otherwise
+    // remember the tap so we advance the instant it is. No-op on the final round.
+    function continueFromLeaderboard() {
+      if (state.screen !== "roundEnd" || state.isFinalRound) return;
+      if (state.pendingChoosing) {
+        const next = state.pendingChoosing;
+        state.pendingChoosing = null;
+        state.leaderboardTapped = false;
+        enterChoosingScreen(next);
+      } else if (!state.leaderboardTapped) {
+        state.leaderboardTapped = true;
+        $("nextRoundNote").textContent = "Getting the next round ready…";
+      }
+    }
+    $("roundEndScreen").addEventListener("click", continueFromLeaderboard);
 
     function renderSessionEnd(payload) {
       $("sessionEndSubtitle").textContent = payload.reason === "not-enough-players"
@@ -2835,7 +2880,7 @@
       renderRoundEnd(payload);            // leaderboard ready underneath
       showRoundAppreciation(payload);     // appreciation page on top for ALL users; tap → leaderboard
     });
-    socket.on("game:sessionEnd", (payload) => { $("solveOverlay").classList.add("hidden"); renderSessionEnd(payload); });
+    socket.on("game:sessionEnd", (payload) => { $("solveOverlay").classList.add("hidden"); $("roundAppreciation").classList.add("hidden"); renderSessionEnd(payload); });
 
     // ── Auto-rejoin after socket reconnect ───────────────────────────────────
     // socket.io fires "connect" on every (re)connection. On the first connect
@@ -2857,7 +2902,9 @@
     });
 
     // ── game:choosingWord ─────────────────────────────────────────
-    socket.on("game:choosingWord", ({ chooserId, chooserName, round, totalRounds }) => {
+    // Switch to the word-choosing screen: the chooser gets the pick panel,
+    // everyone else gets the "X is choosing…" wait panel.
+    function enterChoosingScreen({ chooserId, chooserName, round, totalRounds }) {
       showScreen("chooser");
       const isChooser = chooserId === state.playerId;
       const label = `Round ${round} of ${totalRounds}`;
@@ -2878,6 +2925,28 @@
         $("chooserWaitRound").textContent = label;
         $("chooserWaitAvatar").textContent = (chooserName || "?").charAt(0).toUpperCase();
       }
+    }
+
+    socket.on("game:choosingWord", (payload) => {
+      // If the player is still studying the round-end leaderboard, don't yank
+      // them off it. Either honor an earlier "continue" tap immediately, or stash
+      // the choosing state and let them advance when they tap. (The first round
+      // has no preceding leaderboard, so it falls straight through.)
+      if (state.screen === "roundEnd") {
+        if (state.leaderboardTapped) {
+          state.leaderboardTapped = false;
+          state.pendingChoosing = null;
+          enterChoosingScreen(payload);
+        } else {
+          state.pendingChoosing = payload;
+          const isChooser = payload.chooserId === state.playerId;
+          $("nextRoundNote").textContent = isChooser
+            ? "Your turn — tap to choose your word →"
+            : `Tap to continue — ${payload.chooserName || "the next player"} is choosing →`;
+        }
+        return;
+      }
+      enterChoosingScreen(payload);
     });
 
     // ── game:requestWord (sent only to chooser — no extra action needed) ──

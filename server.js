@@ -10,6 +10,14 @@ const ROOM_EXPIRY_MS = 2 * 60 * 60 * 1000;
 const MAX_PLAYERS = 20;
 const MAX_GUESSES = 6;
 const WORD_LENGTH = 5;
+// How long the FINAL round's appreciation + leaderboard stays up before the
+// final scoreboard replaces it. Long enough to read the meaning and standings.
+const ROUND_END_DELAY = 8000;
+// For non-final rounds we don't force everyone off the leaderboard. Instead, once
+// the appreciation has played we quietly announce the next chooser so they can
+// start picking. Each player leaves the leaderboard on their own — by tapping to
+// continue, or automatically the moment the next round actually starts.
+const ROUND_REVEAL_DELAY = 4000;
 
 const MW_API_KEY = process.env.MW_API_KEY;
 if (!MW_API_KEY) {
@@ -61,13 +69,20 @@ function isFiveLetterWord(word) {
   return /^[A-Z]{5}$/.test(normalizeWord(word));
 }
 
-// Tri-state dictionary check:
+// Single Merriam-Webster lookup that returns BOTH the validity verdict and a
+// short definition from ONE request. Doing both in one call (instead of a
+// separate validate + define round-trip) means the round-end "meaning" is
+// guaranteed to be available to EVERY player whenever the word was accepted —
+// and it halves our MW traffic so rate-limits never silently drop the meaning.
+//
+// Returns { valid, definition } where valid is tri-state:
 //   true  → definitely a valid common word
 //   false → definitely NOT a word (MW responded, nothing matched) — safe to cache
 //   null  → could not verify (no key / HTTP error / network / timeout) — NEVER cached,
 //           callers should fail-open so a transient MW outage never blocks play.
-async function isValidWord(word) {
-  if (!MW_API_KEY) return null;
+// definition is a concise sense string, or "" if none is available.
+async function lookupWord(word) {
+  if (!MW_API_KEY) return { valid: null, definition: "" };
   const normalized = normalizeWord(word).toLowerCase();
   if (wordCache.has(normalized)) return wordCache.get(normalized);
 
@@ -75,13 +90,14 @@ async function isValidWord(word) {
     const url = `https://www.dictionaryapi.com/api/v3/references/collegiate/json/${encodeURIComponent(normalized)}?key=${MW_API_KEY}`;
     const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
     // HTTP error (5xx/429/etc.) is an UNKNOWN result — do not cache, fail-open.
-    if (!response.ok) { console.error("MW API HTTP", response.status); return null; }
+    if (!response.ok) { console.error("MW API HTTP", response.status); return { valid: null, definition: "" }; }
 
     const data = await response.json();
     if (!Array.isArray(data) || data.length === 0 || typeof data[0] === "string") {
       // MW answered definitively: not a known word (data[0] strings are spelling suggestions).
-      cacheWord(normalized, false);
-      return false;
+      const result = { valid: false, definition: "" };
+      cacheWord(normalized, result);
+      return result;
     }
 
     const REJECTED_LABELS = new Set([
@@ -97,46 +113,32 @@ async function isValidWord(word) {
       return true;
     });
 
-    cacheWord(normalized, valid);
-    return valid;
+    // Pull a concise definition from the same payload so the round-end reveal
+    // never needs a second API call.
+    const defEntry = data.find(e => typeof e === "object" && Array.isArray(e.shortdef) && e.shortdef.length);
+    let definition = defEntry ? String(defEntry.shortdef[0] || "").trim() : "";
+    if (definition.length > 160) definition = definition.slice(0, 157).trimEnd() + "…";
+
+    const result = { valid, definition };
+    cacheWord(normalized, result);
+    return result;
 
   } catch (err) {
     // Network failure / 5s timeout abort — UNKNOWN, do not cache, fail-open.
     console.error("MW API error:", err.message);
-    return null;
+    return { valid: null, definition: "" };
   }
+}
+
+// Thin wrapper used by the guess path and the /api/validate-word route, which
+// only care about the tri-state verdict.
+async function isValidWord(word) {
+  return (await lookupWord(word)).valid;
 }
 
 function cacheWord(key, value) {
   if (wordCache.size > CACHE_MAX_SIZE) wordCache.delete(wordCache.keys().next().value);
   wordCache.set(key, value);
-}
-
-const defCache = new Map();
-
-// Fetch a short dictionary definition for a word from Merriam-Webster.
-// Returns a single concise sense string, or "" if unavailable (no key / outage /
-// not found). Cached so we never hit MW twice for the same word.
-async function getShortDef(word) {
-  if (!MW_API_KEY) return "";
-  const normalized = normalizeWord(word).toLowerCase();
-  if (defCache.has(normalized)) return defCache.get(normalized);
-  try {
-    const url = `https://www.dictionaryapi.com/api/v3/references/collegiate/json/${encodeURIComponent(normalized)}?key=${MW_API_KEY}`;
-    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
-    if (!response.ok) return "";
-    const data = await response.json();
-    if (!Array.isArray(data)) return "";
-    const entry = data.find(e => typeof e === "object" && Array.isArray(e.shortdef) && e.shortdef.length);
-    let def = entry ? String(entry.shortdef[0] || "").trim() : "";
-    if (def.length > 160) def = def.slice(0, 157).trimEnd() + "…";
-    if (defCache.size > CACHE_MAX_SIZE) defCache.delete(defCache.keys().next().value);
-    defCache.set(normalized, def);
-    return def;
-  } catch (err) {
-    console.error("MW define error:", err.message);
-    return "";
-  }
 }
 
 function isDisplayName(name) {
@@ -415,17 +417,25 @@ function finishRound(room, reason = "complete") {
   });
 
   if (room.currentRound >= room.config.totalRounds) {
-    room.status = "session-ended";
-    io.to(room.code).emit("game:sessionEnd", {
-      leaderboard: getFinalLeaderboard(room)
-    });
+    // Final round — hold on the appreciation + round leaderboard before the
+    // final scoreboard replaces them, so the last round's standings are seen too.
+    setTimeout(() => {
+      if (!rooms.has(room.code) || room.status !== "round-ended") return;
+      room.status = "session-ended";
+      io.to(room.code).emit("game:sessionEnd", {
+        leaderboard: getFinalLeaderboard(room)
+      });
+    }, ROUND_END_DELAY);
   } else {
-    // Auto-advance to next chooser after 3 seconds
+    // Announce the next chooser once the appreciation has played. Players keep
+    // studying the leaderboard until they tap to continue (→ choosing screen) or
+    // until the next round starts (→ straight to the game). The next chooser can
+    // begin picking right away without waiting on everyone else.
     setTimeout(() => {
       if (rooms.has(room.code) && room.status === "round-ended") {
         startRoundRobin(room);
       }
-    }, 3000);
+    }, ROUND_REVEAL_DELAY);
   }
 }
 
@@ -794,10 +804,13 @@ io.on("connection", (socket) => {
       return callback?.({ ok: false, error: "Word must be exactly 5 alphabetic characters." });
     }
 
+    // ONE dictionary lookup gives us BOTH the validity verdict and the meaning.
     // Tri-state: reject only a DEFINITIVE non-word. If the dictionary can't be
     // reached (null), fail-open so a missing key / MW outage never blocks play.
-    const wordValid = await isValidWord(word);
-    if (wordValid === false) {
+    // Because the definition rides along with validation, it's guaranteed
+    // available to EVERY player at round end whenever the word was accepted.
+    const lookup = await lookupWord(word);
+    if (lookup.valid === false) {
       return callback?.({ ok: false, error: "That's not a word we recognise. Try a common English noun, verb, or adjective (no names or places)." });
     }
 
@@ -805,26 +818,7 @@ io.on("connection", (socket) => {
       ? customCategory : rawCategory;
 
     room.waitingForWord = false;
-    // Fetch the word's meaning UP FRONT so it's guaranteed available to EVERY
-    // player (the chooser too) when the round ends — even on a fast round.
-    // Cap the wait so a slow dictionary never holds up the round more than ~2.5s;
-    // if it's still pending, keep fetching so it's ready before the round ends.
-    const defPromise = getShortDef(word);
-    let definition = "";
-    try {
-      definition = await Promise.race([
-        defPromise,
-        new Promise(res => setTimeout(() => res(null), 2500))
-      ]);
-    } catch { definition = ""; }
-    const stillPending = definition === null;
-    if (stillPending) definition = "";
-
-    startGameRound(room, { word, category: resolvedCategory, hint, definition });
-    if (stillPending) {
-      const cfg = room.currentRoundConfig;
-      defPromise.then(d => { if (cfg) cfg.definition = d; }).catch(() => {});
-    }
+    startGameRound(room, { word, category: resolvedCategory, hint, definition: lookup.definition || "" });
     callback?.({ ok: true });
   });
 
