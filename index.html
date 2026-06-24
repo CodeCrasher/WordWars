@@ -4,25 +4,37 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>WordWars</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
+    /* ── WordWars redesign tokens ──────────────────────────────────────
+       Daylight is the default (set on .app[data-theme="light"]); :root holds
+       the Midnight (dark) palette used when the theme toggle flips to dark. */
     :root {
-      --bg: #1a0f08;
-      --panel: #2a1a0e;
-      --panel-2: #3a2415;
-      --text: #f5ede4;
-      --muted: #c4956a;
-      --line: #5a3c26;
-      --accent: #c0440e;
-      --accent-2: #c47a3a;
-      --danger: #e03a1a;
-      --warn: #d4820a;
-      --green: #4a8c2a;
-      --yellow: #c47a3a;
-      --gray: #5a4a3a;
-      --shadow: rgba(60, 20, 5, 0.35);
-      --tile: #140c05;
-      --key-bg: #8c6e5c;
-      --key-bg-border: #a07e6a;
+      /* Midnight (active when the theme toggle sets data-theme="dark") */
+      --bg: #17141f;
+      --panel: #251f33;        /* --card */
+      --panel-2: #2f2841;
+      --soft: #2f2841;
+      --text: #f3f0fa;
+      --ink: #f3f0fa;
+      --muted: #a59ebb;
+      --line: #443a5b;
+      --accent: #6c4cff;
+      --accent-dk: color-mix(in srgb, var(--accent) 72%, #000);
+      --accent-2: var(--accent);
+      --shadow: rgba(0, 0, 0, 0.45);
+      --tile: var(--panel);
+      --key-bg: var(--soft);
+      --key-bg-border: var(--line);
+      /* status palette — constant across themes */
+      --green: #54bd6f;  --green-dk: #3a9e57;
+      --yellow: #f2b13c; --yellow-dk: #d8932a;
+      --gray: #a59bb8;   --gray-dk: #877da0;
+      --danger: #ff5d73; --warn: #d8932a;
+      --font-display: "Bricolage Grotesque", system-ui, sans-serif;
+      --font-body: "Hanken Grotesk", system-ui, -apple-system, sans-serif;
     }
 
     [data-theme] {
@@ -30,23 +42,22 @@
     }
 
     [data-theme="light"] {
-      --bg: #f3e6d6;
-      --panel: #fbf3e8;
-      --panel-2: #f5e7d6;
-      --text: #3a2010;
-      --muted: #8a6448;
-      --line: #dcc4a8;
-      --accent: #c0440e;
-      --accent-2: #c47a3a;
-      --danger: #c93a1a;
-      --warn: #b87800;
-      --green: #3a7a1a;
-      --yellow: #b87020;
-      --gray: #8a7a6a;
-      --shadow: rgba(122, 74, 40, 0.15);
-      --tile: #ffffff;
-      --key-bg: #b8a08c;
-      --key-bg-border: #c8b09a;
+      /* Daylight (default) */
+      --bg: #fbfaf6;
+      --panel: #ffffff;        /* --card */
+      --panel-2: #f5f2ea;
+      --soft: #f5f2ea;
+      --text: #241f31;
+      --ink: #241f31;
+      --muted: #8a8499;
+      --line: #eae2d6;
+      --accent: #6c4cff;
+      --accent-dk: color-mix(in srgb, var(--accent) 72%, #000);
+      --accent-2: var(--accent);
+      --shadow: rgba(60, 40, 90, 0.10);
+      --tile: var(--panel);
+      --key-bg: var(--soft);
+      --key-bg-border: var(--line);
     }
 
     * {
@@ -1671,6 +1682,281 @@
       }
       .topbar-actions { gap: 10px; }
     }
+    /* ════════════════════════════════════════════════════════════════
+       WordWars redesign — component layer (appended last so it wins the
+       cascade over the original warm/brown styling). Colors all flow from
+       the tokens above, so Daylight + Midnight both work.
+       ════════════════════════════════════════════════════════════════ */
+    body {
+      font-family: var(--font-body);
+      background: var(--bg);
+      animation: none;
+    }
+    /* body is the PARENT of #app, so it can't read #app's themed tokens —
+       key its background off the active theme explicitly. */
+    body:has(#app[data-theme="light"]) { background: #fbfaf6; }
+    body:has(#app[data-theme="dark"])  { background: #161320; }
+    h1, h2, h3, .hero-title, .room-code, .timer, .solve-heading,
+    .modal-card h3, .chooser-waiting h2, .topbar h1, .leaderModalTitle {
+      font-family: var(--font-display);
+      letter-spacing: -0.01em;
+    }
+
+    /* ── Buttons: chunky 3D ─────────────────────────────────── */
+    .btn {
+      font-family: var(--font-display);
+      font-weight: 700;
+      border-radius: 14px;
+      padding: 13px 22px;
+      background: var(--panel);
+      color: var(--text);
+      border: 2px solid var(--line);
+      box-shadow: 0 5px 0 var(--line);
+      transition: transform .08s ease, box-shadow .08s ease, filter .15s ease;
+    }
+    .btn:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 2px 0 var(--line); }
+    .btn.primary {
+      background: var(--accent); color: #fff;
+      border-color: var(--accent); box-shadow: 0 5px 0 var(--accent-dk);
+    }
+    .btn.primary:active:not(:disabled) { box-shadow: 0 2px 0 var(--accent-dk); }
+    .btn.danger {
+      background: var(--danger); color: #fff; border-color: var(--danger);
+      box-shadow: 0 5px 0 color-mix(in srgb, var(--danger) 68%, #000);
+    }
+    .btn.danger:active:not(:disabled) { box-shadow: 0 2px 0 color-mix(in srgb, var(--danger) 68%, #000); }
+    .btn.btn-leave {
+      background: var(--panel);
+      color: var(--danger);
+      border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+      box-shadow: 0 4px 0 color-mix(in srgb, var(--danger) 28%, var(--line));
+    }
+    .theme-toggle {
+      background: var(--panel); border: 1.5px solid var(--line);
+      color: var(--text); border-radius: 12px;
+    }
+
+    /* ── Cards / panels ─────────────────────────────────────── */
+    .panel, .home-panel {
+      background: var(--panel);
+      border: 1.5px solid var(--line);
+      border-radius: 22px;
+      box-shadow: 0 14px 40px var(--shadow);
+    }
+
+    /* ── Badges, pills, indicators ──────────────────────────── */
+    .badge {
+      border-radius: 999px; font-weight: 700;
+      background: var(--soft); border: 1.5px solid var(--line); color: var(--muted);
+    }
+    .badge.badge--chooser, .chooser-badge {
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+      color: var(--accent); border-color: transparent;
+    }
+    .feature-pill {
+      border-radius: 999px; font-weight: 600;
+      background: var(--soft); border: 1.5px solid var(--line); color: var(--text);
+    }
+    .live-dot { background: var(--green) !important; }
+    .step-num { background: var(--accent); color: #fff; }
+    .how-label, .chooser-badge { color: var(--accent); }
+
+    /* ── Room code box ──────────────────────────────────────── */
+    .code-box {
+      background: var(--soft);
+      border: 2px dashed color-mix(in srgb, var(--accent) 40%, var(--line));
+      border-radius: 16px;
+    }
+    .room-code { color: var(--text); letter-spacing: .14em; }
+
+    /* ── Inputs / selects ───────────────────────────────────── */
+    .field input, .field select, .input-lg, select, #adminTimer, #timerInput {
+      background: var(--soft); border: 1.5px solid var(--line);
+      border-radius: 12px; color: var(--text);
+    }
+    .field input:focus, .field select:focus, .input-lg:focus, select:focus {
+      border-color: var(--accent); outline: none;
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+    }
+
+    /* ── Board cells (inset rings + 3D scored chips, per spec) ─ */
+    .tile {
+      border-radius: 13px; background: var(--tile); color: var(--ink);
+      border: none; box-shadow: inset 0 0 0 2px var(--line);
+      font-family: var(--font-display); font-weight: 800;
+    }
+    .tile.filled { background: var(--tile); color: var(--ink); box-shadow: inset 0 0 0 2.5px var(--ink); }
+    .tile.active { background: var(--tile); box-shadow: inset 0 0 0 2.5px var(--accent); }
+    .tile.green  { background: var(--green);  color: #fff;    box-shadow: 0 4px 0 var(--green-dk); }
+    .tile.yellow { background: var(--yellow); color: #4a3411; box-shadow: 0 4px 0 var(--yellow-dk); }
+    .tile.gray   { background: var(--gray);   color: #fff;    box-shadow: 0 4px 0 var(--gray-dk); }
+    .tile-pts { display: none; }
+
+    /* ── Keyboard (soft chips, recolor to best state) ───────── */
+    .key {
+      background: var(--key-bg); border: none;
+      border-radius: 10px; color: var(--ink);
+      font-family: var(--font-body); font-weight: 800;
+      box-shadow: 0 3px 0 var(--line);
+    }
+    .key:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 var(--line); }
+    .key.green  { background: var(--green);  color: #fff;    box-shadow: 0 3px 0 var(--green-dk); }
+    .key.yellow { background: var(--yellow); color: #4a3411; box-shadow: 0 3px 0 var(--yellow-dk); }
+    .key.gray   { background: var(--gray);   color: #fff;    box-shadow: 0 3px 0 var(--gray-dk); }
+    .key--enter { background: var(--accent); color: #fff;    box-shadow: 0 3px 0 var(--accent-dk); }
+
+    /* ── Hint bar ───────────────────────────────────────────── */
+    .hint-box { border-radius: 13px; border: 1.5px solid var(--line); background: var(--soft); color: var(--muted); }
+    .hint-box.hint-shown {
+      background: color-mix(in srgb, var(--yellow) 16%, transparent);
+      color: #a8771a; border-color: color-mix(in srgb, var(--yellow) 40%, var(--line));
+      font-weight: 600;
+    }
+
+    /* ── Leaderboard / standings / progress rows ────────────── */
+    .leader-row, .score-row, .standing-row, .progress-row, .player-row {
+      background: var(--soft); border: 1.5px solid var(--line); border-radius: 14px;
+    }
+    .player-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .player-name { font-weight: 700; color: var(--ink); }
+    .score-row--me, .standing-row--me, .progress-row--me {
+      border-color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 10%, var(--soft));
+    }
+    .score-total, .score-name, .standing-score, .progress-name { color: var(--text); }
+    .score-delta--gain, .progress-solved { color: var(--green-dk); }
+    .pavatar {
+      display: grid; place-items: center; border-radius: 11px;
+      color: #fff; font-family: var(--font-display); font-weight: 800;
+      flex: 0 0 auto; line-height: 1;
+    }
+    .row-av { display: flex; align-items: center; gap: 11px; min-width: 0; }
+    .row-av .progress-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Round-end / final rows: rank · avatar · name · score */
+    .score-row { display: flex; align-items: center; gap: 11px; }
+    .score-row .score-rank { font-family: var(--font-display); font-weight: 800; color: var(--muted); width: 20px; text-align: center; flex: 0 0 auto; }
+    .score-row .score-left { flex: 1; min-width: 0; }
+    .score-row .score-right { text-align: right; flex: 0 0 auto; }
+
+    /* ── Podium (horizontal 2nd · 1st · 3rd) ────────────────── */
+    @keyframes bob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-7px)} }
+    .podium {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 12px; align-items: end; margin-bottom: 22px;
+    }
+    .podium-col { display: flex; flex-direction: column; align-items: center; gap: 10px; position: relative; }
+    .podium-block {
+      width: 100%; border-radius: 16px 16px 0 0; background: var(--soft);
+      border: 1.5px solid var(--line); border-bottom: none; padding: 14px 8px;
+      display: flex; flex-direction: column; align-items: center; gap: 3px; justify-content: flex-end;
+    }
+    .podium-1 .podium-block {
+      min-height: 150px;
+      background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+      border: 2px solid color-mix(in srgb, var(--accent) 40%, transparent); border-bottom: none;
+    }
+    .podium-2 .podium-block { min-height: 118px; }
+    .podium-3 .podium-block { min-height: 96px; }
+    .podium-block .medal { font-size: 26px; line-height: 1; }
+    .podium-1 .podium-block .medal { font-size: 30px; }
+    .podium-name { font-weight: 700; font-size: 15px; color: var(--ink); }
+    .podium-1 .podium-name { font-weight: 800; }
+    .podium-score { font-family: var(--font-display); font-weight: 800; font-size: 18px; color: var(--ink); }
+    .podium-1 .podium-score { font-size: 22px; color: var(--accent); }
+    .podium-crown { font-size: 26px; animation: bob 2.4s ease-in-out infinite; }
+    .podium-1 .pavatar { box-shadow: 0 5px 0 color-mix(in srgb, var(--accent) 70%, #000); }
+
+    /* ── Overlays / modals ──────────────────────────────────── */
+    .solve-overlay { background: rgba(20, 12, 40, .55); }
+    .solve-card, .modal-card {
+      background: var(--panel);
+      border: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+      border-radius: 24px; box-shadow: 0 28px 80px rgba(20, 12, 40, .35);
+    }
+    .solve-heading { color: var(--text); }
+    .appreciation-meaning {
+      color: var(--text); border-left: 3px solid var(--accent);
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+    }
+    .appreciation-word span { color: var(--accent); }
+
+    /* ── Floating letter tiles (accent-tinted, no scrabble pts) ─ */
+    .float-tile {
+      background: color-mix(in srgb, var(--accent) 22%, var(--panel));
+      color: color-mix(in srgb, var(--accent) 55%, var(--ink));
+      border-radius: 14px; font-family: var(--font-display); font-weight: 800;
+      box-shadow:
+        inset 0 0 0 2.5px color-mix(in srgb, var(--accent) 55%, var(--line)),
+        0 10px 26px var(--shadow);
+    }
+    .float-tile sub { display: none; }
+
+    /* ── Logo → purple "W" tile (replaces the old raster mark) ─ */
+    .logo, .hero-logo {
+      background: var(--accent);
+      box-shadow: 0 4px 0 var(--accent-dk);
+      color: #fff;
+      font-family: var(--font-display);
+      font-weight: 800;
+      overflow: visible;
+      animation: none;
+    }
+    .logo img, .hero-logo img { display: none; }
+    .logo::after, .hero-logo::after { content: "W"; line-height: 1; }
+    .logo::after { font-size: 27px; }
+    .hero-logo::after { font-size: 50px; }
+
+    /* ── Live header pill ───────────────────────────────────── */
+    .live-pill {
+      display: inline-flex; align-items: center; gap: 7px;
+      font-size: 13px; font-weight: 600; color: var(--muted);
+      background: var(--panel); border: 1.5px solid var(--line);
+      border-radius: 999px; padding: 7px 13px;
+    }
+    .live-pill-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: blink 1.6s ease infinite; }
+    .live-pill.live-off .live-pill-dot { background: var(--warn); }
+
+    /* ── Confetti (solve celebration) ───────────────────────── */
+    @keyframes confettiFall {
+      0%   { transform: translateY(-12vh) rotate(0); opacity: 1; }
+      100% { transform: translateY(112vh) rotate(720deg); opacity: .9; }
+    }
+    .confetti-host { position: fixed; inset: 0; z-index: 60; pointer-events: none; overflow: hidden; }
+    .confetti-piece { position: absolute; top: 0; width: 9px; height: 14px; border-radius: 2px; will-change: transform; }
+    @media (prefers-reduced-motion: reduce) { .confetti-host { display: none; } }
+
+    /* ── Misc ───────────────────────────────────────────────── */
+    .countdown-banner { background: var(--accent); color: #fff; font-family: var(--font-display); }
+    .hero-sub, .home-footer, .subtitle, .muted { color: var(--muted); }
+    .hero-title { color: var(--text); }
+
+    /* ── Home: persistent header + spec hero ────────────────── */
+    .app:has(#homeScreen.active) .topbar {
+      background: initial; border-bottom: 1px solid var(--line);
+      justify-content: space-between;
+    }
+    .app:has(#homeScreen.active) .topbar .brand { display: flex; }
+    .screen.active.home { display: block; min-height: auto; }
+    .home { padding: 0; }
+    .home-hero { text-align: center; width: min(1140px, 100%); margin: 0 auto; padding: 30px 0 60px; }
+    .home-eyebrow {
+      font-size: 13px; font-weight: 700; letter-spacing: .14em;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 14px;
+    }
+    .home-h1 {
+      font-family: var(--font-display); font-weight: 800;
+      font-size: clamp(40px, 7vw, 72px); line-height: .98; letter-spacing: -.025em;
+      color: var(--ink); margin: 0 auto; max-width: 13ch; text-wrap: balance;
+    }
+    .home-lead { font-size: 18px; line-height: 1.5; color: var(--muted); max-width: 46ch; margin: 18px auto 30px; }
+    .home-cta { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-bottom: 36px; }
+    .home-cta .btn { font-size: 18px; padding: 17px 30px; }
+    .feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; width: min(840px, 100%); margin: 0 auto; text-align: left; }
+    .feature-card { background: var(--panel); border: 1.5px solid var(--line); border-radius: 20px; padding: 22px 20px; box-shadow: 0 10px 30px var(--shadow); }
+    .feature-ic { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; font-size: 22px; margin-bottom: 14px; }
+    .feature-t { font-family: var(--font-display); font-weight: 700; font-size: 17px; color: var(--ink); margin-bottom: 5px; }
+    .feature-b { font-size: 14px; line-height: 1.45; color: var(--muted); }
+    @media (max-width: 720px) { .feature-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -1686,61 +1972,39 @@
       </div>
       <div class="topbar-actions">
         <button id="leaveFromGame" class="btn btn-leave btn-leave--header hidden" title="Leave game" aria-label="Leave game">✕ Leave</button>
+        <span class="live-pill" id="livePill"><span class="live-pill-dot"></span><span id="livePillText">Live</span></span>
         <button class="theme-toggle" id="themeToggle" title="Toggle theme" aria-label="Toggle theme">☾</button>
       </div>
     </header>
 
     <main>
       <section class="screen home active" id="homeScreen">
-        <div class="home-content">
-          <div class="hero-block">
-            <div class="hero-logo"><img src="WordWars.png" alt="WordWars"></div>
-            <p class="hero-title">WordWars</p>
-            <p class="hero-sub">Host-controlled • Competitive • Real-time</p>
-            <div class="feature-pills">
-              <span class="feature-pill">⚡ Fastest finger wins</span>
-              <span class="feature-pill">🎯 Every player picks a word</span>
-              <span class="feature-pill">🏆 Live leaderboard</span>
-            </div>
+        <div class="home-hero">
+          <div class="home-eyebrow">⚡ Fast-fingers word racing</div>
+          <h1 class="home-h1">Guess the word. Beat your friends.</h1>
+          <p class="home-lead">Every round, one player hides a secret word — everyone else races to crack it. Fastest, sharpest guesser climbs the board.</p>
+          <div class="home-cta">
+            <button class="btn primary" id="showCreate">Create a room →</button>
+            <button class="btn" id="showJoin">Join with a code</button>
           </div>
-          <div class="home-panel">
-            <div>
-              <h2>Start a match</h2>
-              <p class="subtitle">Host a room or join one with a 6-character code.</p>
+          <div class="feature-grid">
+            <div class="feature-card">
+              <div class="feature-ic" style="background:color-mix(in srgb,var(--accent) 14%,transparent)">🎯</div>
+              <div class="feature-t">Everyone picks</div>
+              <div class="feature-b">Each round a different player sets the secret word and category.</div>
             </div>
-            <div class="live-indicator">
-              <span class="live-dot"></span>
-              Ready to play
+            <div class="feature-card">
+              <div class="feature-ic" style="background:color-mix(in srgb,#ff8a3d 16%,transparent)">⏱️</div>
+              <div class="feature-t">Race the clock</div>
+              <div class="feature-b">Solve in fewer guesses, faster than the room, to bank more points.</div>
             </div>
-            <div class="home-actions">
-              <button class="btn primary" id="showCreate">Create Room →</button>
-              <button class="btn" id="showJoin">Join Room</button>
+            <div class="feature-card">
+              <div class="feature-ic" style="background:color-mix(in srgb,#54bd6f 18%,transparent)">🏆</div>
+              <div class="feature-t">Live leaderboard</div>
+              <div class="feature-b">Watch standings shuffle in real time as the room solves.</div>
             </div>
-            <div class="how-it-works">
-              <p class="how-label">How it works</p>
-              <div class="how-steps">
-                <div class="how-step">
-                  <div class="step-num">1</div>
-                  <div class="step-text">Host creates a private room and shares the 6-character code</div>
-                </div>
-                <div class="how-step">
-                  <div class="step-num">2</div>
-                  <div class="step-text">Each round, one player picks the secret word and category</div>
-                </div>
-                <div class="how-step">
-                  <div class="step-num">3</div>
-                  <div class="step-text">Everyone else races to guess it — fastest solver wins the most points</div>
-                </div>
-                <div class="how-step">
-                  <div class="step-num">4</div>
-                  <div class="step-text">The word picker earns points based on how hard the word was to crack</div>
-                </div>
-              </div>
-            </div>
-
           </div>
         </div>
-        <footer class="home-footer">Made with ☕ for word nerds</footer>
       </section>
 
       <section class="screen" id="createScreen">
@@ -2174,6 +2438,7 @@
         $("solveStats").textContent = "Tap to continue";
       }
       overlay.classList.remove("hidden");
+      if (solved) burstConfetti();
       let gone = false;
       const dismiss = () => {
         if (gone) return;
@@ -2183,6 +2448,44 @@
       };
       overlay.addEventListener("click", dismiss, { once: true });
     }
+
+    // Confetti burst on solve — brand colors, honors reduced motion.
+    const CONFETTI_COLORS = ["#6c4cff", "#54bd6f", "#f2b13c", "#ff5d73", "#1ec8a5", "#3aa0ff", "#ff8a3d"];
+    function burstConfetti() {
+      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      let host = $("confettiHost");
+      if (!host) {
+        host = document.createElement("div");
+        host.id = "confettiHost";
+        host.className = "confetti-host";
+        host.setAttribute("aria-hidden", "true");
+        document.body.appendChild(host);
+      }
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < 70; i++) {
+        const p = document.createElement("div");
+        p.className = "confetti-piece";
+        const dur = 1.4 + Math.random() * 1.5;
+        const delay = Math.random() * 0.5;
+        p.style.left = (Math.random() * 100) + "vw";
+        p.style.background = CONFETTI_COLORS[i % CONFETTI_COLORS.length];
+        p.style.animation = `confettiFall ${dur.toFixed(2)}s linear ${delay.toFixed(2)}s forwards`;
+        frag.appendChild(p);
+      }
+      host.appendChild(frag);
+      setTimeout(() => { if (host) host.innerHTML = ""; }, 3400);
+    }
+
+    // Header "Live" pill reflects the socket connection.
+    function setLive(on) {
+      const p = $("livePill");
+      if (!p) return;
+      p.classList.toggle("live-off", !on);
+      const t = $("livePillText");
+      if (t) t.textContent = on ? "Live" : "Offline";
+    }
+    socket.on("connect", () => setLive(true));
+    socket.on("disconnect", () => setLive(false));
 
     const CHOOSER_HEADINGS = ["Word Picker!", "Mastermind!", "Sneaky pick!"];
     const CHOOSER_STUMP_PUNS = [
@@ -2268,6 +2571,26 @@
         '"': "&quot;",
         "'": "&#39;"
       }[char]));
+    }
+
+    // ── Player avatars (redesign) ───────────────────────────────────────
+    // Server doesn't send per-player colors, so derive a stable one from the
+    // id/name. "You" always uses the accent. Used in every leaderboard/lobby row.
+    const AVATAR_COLORS = ["#ff5d73", "#1ec8a5", "#ff8a3d", "#3aa0ff", "#9b59ff", "#54bd6f", "#f2b13c", "#ff7a9c"];
+    function playerColor(key, isMe) {
+      if (isMe) return "var(--accent)";
+      const s = String(key || "");
+      let h = 0;
+      for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+      return AVATAR_COLORS[h % AVATAR_COLORS.length];
+    }
+    function avatarInitials(name) {
+      const parts = String(name || "?").trim().split(/\s+/);
+      const s = parts.length >= 2 ? parts[0][0] + parts[1][0] : String(name || "?").slice(0, 2);
+      return s.toUpperCase();
+    }
+    function avatarHtml(name, key, isMe, size = 34) {
+      return `<div class="pavatar" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.4)}px;background:${playerColor(key, isMe)}">${escapeHtml(avatarInitials(name))}</div>`;
     }
 
     // Screens where the back button must be blocked (game in progress)
@@ -2536,11 +2859,14 @@
 
       $("lobbyPlayers").innerHTML = state.room.players.map((player) => `
         <div class="player-row">
-          <div>
-            <div class="player-name">${escapeHtml(player.name)} ${player.isHost ? "• Host" : ""}</div>
-            <div class="muted">${player.active ? "In lobby" : "Inactive"} · ${player.cumulativeScore} pts</div>
+          <div class="row-av">
+            ${avatarHtml(player.name, player.id || player.name, player.id === state.playerId, 40)}
+            <div>
+              <div class="player-name">${escapeHtml(player.name)}</div>
+              <div class="muted">${player.active ? "In lobby" : "Inactive"} · ${player.cumulativeScore} pts</div>
+            </div>
           </div>
-          ${state.isHost && !player.isHost ? `<button class="btn danger" data-kick="${player.id}">Kick</button>` : `<span class="badge">${player.connected ? "Online" : "Away"}</span>`}
+          ${state.isHost && !player.isHost ? `<button class="btn danger" data-kick="${player.id}">Kick</button>` : `<span class="badge">${player.isHost ? "Host" : player.connected ? "Ready" : "Away"}</span>`}
         </div>
       `).join("");
 
@@ -2626,7 +2952,8 @@
       } else {
         ind.style.display = "none";
       }
-      $("hintBox").textContent = payload.hintAvailable ? "Hint available after 3 failed guesses." : "No hint this round.";
+      $("hintBox").classList.remove("hint-shown");
+      $("hintBox").textContent = payload.hintAvailable ? "💡 Hint unlocks after 3 guesses · 3 to go" : "No hint this round.";
       $("endRoundBtn").classList.toggle("hidden", !state.isHost);
       // The picker can't guess, so swap their dead board/keyboard for the live
       // spectator panel. Guessers keep their board untouched (zero layout risk)
@@ -2736,7 +3063,8 @@
 
       if (response.hint) {
         state.game.hint = response.hint;
-        $("hintBox").textContent = `Hint: ${response.hint}`;
+        $("hintBox").textContent = `💡 Hint: ${response.hint}`;
+        $("hintBox").classList.add("hint-shown");
         // First time the hint unlocks (after 3 tries) and we haven't just solved:
         // surface it as a popup that stays until the player taps to keep guessing.
         if (!state.game.hintShown && !response.solved) {
@@ -2759,6 +3087,9 @@
         state.game.locked = true;
         $("hintBox").textContent = "Out of guesses. Waiting for the round to end.";
         showSolveOverlay(false, state.game.maxGuesses, () => {});
+      } else if (state.game.hintAvailable && !state.game.hint && state.game.currentRow < 3) {
+        // Count down to the 3-guess hint unlock.
+        $("hintBox").textContent = `💡 Hint unlocks after 3 guesses · ${3 - state.game.currentRow} to go`;
       }
     }
 
@@ -2822,8 +3153,10 @@
         const isMe = player.id === state.playerId;
         return `
         <div class="score-row${isMe ? " score-row--me" : ""}">
+          <span class="score-rank">${index + 1}</span>
+          ${avatarHtml(player.name, player.id || player.name, isMe, 36)}
           <div class="score-left">
-            <strong class="score-name"><span class="score-rank">${index + 1}.</span> ${escapeHtml(player.name)}${chooserBadge}</strong>
+            <strong class="score-name">${escapeHtml(player.name)}${chooserBadge}</strong>
             <div class="muted score-detail">${detail}</div>
           </div>
           <div class="score-right">
@@ -2871,23 +3204,31 @@
       if (payload.reason === "not-enough-players") {
         showToast("Everyone else left — the game has ended.");
       }
-      const top = payload.leaderboard.slice(0, 3);
-      const places = [
-        { medal: "🥈", label: "2nd", item: top[1], className: "" },
-        { medal: "🥇", label: "1st", item: top[0], className: "first" },
-        { medal: "🥉", label: "3rd", item: top[2], className: "" }
-      ];
-      $("podium").innerHTML = places.map((place) => `
-        <div class="podium-place ${place.className}">
-          <div class="medal">${place.medal}</div>
-          <strong>${place.item ? escapeHtml(place.item.name) : "Vacant"}</strong>
-          <div class="muted">${place.item ? `${place.item.cumulativeScore} pts` : place.label}</div>
-        </div>
-      `).join("");
-      $("finalScores").innerHTML = payload.leaderboard.map((entry, index) => `
+      const board = payload.leaderboard;
+      const me = state.playerId;
+      // Horizontal podium: column order in the DOM is 2nd · 1st · 3rd so the grid
+      // places the winner in the centre, taller and accent-tinted.
+      const medals = { 1: "🥇", 2: "🥈", 3: "🥉" };
+      const pedestal = (item, place) => {
+        const isMe = item && item.id === me;
+        const av = item ? avatarHtml(item.name, item.id || item.name, isMe, place === 1 ? 64 : place === 2 ? 58 : 54) : "";
+        const crown = place === 1 ? `<div class="podium-crown">👑</div>` : "";
+        return `<div class="podium-col podium-${place}">
+          ${crown}${av}
+          <div class="podium-block">
+            <div class="medal">${medals[place]}</div>
+            <div class="podium-name">${item ? escapeHtml(item.name) : "Vacant"}</div>
+            ${item ? `<div class="podium-score">${item.cumulativeScore}</div>` : ""}
+          </div>
+        </div>`;
+      };
+      $("podium").innerHTML = pedestal(board[1], 2) + pedestal(board[0], 1) + pedestal(board[2], 3);
+      $("finalScores").innerHTML = board.slice(3).map((entry, i) => `
         <div class="score-row">
-          <strong>${index + 1}. ${escapeHtml(entry.name)}</strong>
-          <strong>${entry.cumulativeScore} pts</strong>
+          <span class="score-rank">${i + 4}</span>
+          ${avatarHtml(entry.name, entry.id || entry.name, entry.id === me, 34)}
+          <strong class="score-name" style="flex:1;min-width:0">${escapeHtml(entry.name)}</strong>
+          <strong class="score-total">${entry.cumulativeScore} pts</strong>
         </div>
       `).join("");
       showScreen("sessionEnd");
@@ -3038,9 +3379,10 @@
       const max = state.game.maxGuesses || 6;
       const html = progress.map((p) => {
         const me = p.id === state.playerId;
+        const av = avatarHtml(p.name, p.id || p.name, me, 34);
         if (p.isChooser) {
           return `<div class="progress-row${me ? " progress-row--me" : ""}">
-            <span class="progress-name">${escapeHtml(p.name)}</span>
+            <span class="row-av">${av}<span class="progress-name">${escapeHtml(p.name)}</span></span>
             <span class="progress-tag">✍️ word picker</span>
           </div>`;
         }
@@ -3048,7 +3390,7 @@
           ? `<span class="progress-solved">✓ ${p.score} pts</span>`
           : `<span class="progress-attempts">${attemptDots(p.guessesUsed, max)} <span class="progress-count">${p.guessesUsed}/${max}</span></span>`;
         return `<div class="progress-row${me ? " progress-row--me" : ""}">
-          <span class="progress-name">${escapeHtml(p.name)}</span>
+          <span class="row-av">${av}<span class="progress-name">${escapeHtml(p.name)}</span></span>
           ${status}
         </div>`;
       }).join("");

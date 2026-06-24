@@ -3,3 +3,7 @@ node_modules/
 .env.local
 *.log
 .DS_Store
+
+# Design handoff artifacts (local reference only)
+design_handoff_wordwars_redesign/
+*.zip
