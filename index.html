@@ -2349,7 +2349,37 @@
 
     const $ = (id) => document.getElementById(id);
 
-    const SOLVE_HEADINGS = ["", "Unbelievable!", "Word wizard!", "Three-mendous!", "Nice work!", "Close call!", "Last chance hero!"];
+    // ── Session persistence ───────────────────────────────────────
+    // Persist the room code + immutable session token so a hard page refresh
+    // (or tab restore) can reclaim the player's slot — not just transient socket
+    // blips, which already work because the page stays loaded. Wrapped in
+    // try/catch since localStorage can be unavailable (private mode, disabled).
+    const SESSION_KEY = "wordwars:session";
+    function saveSession(code, sessionId) {
+      if (!code || !sessionId) return;
+      try { localStorage.setItem(SESSION_KEY, JSON.stringify({ code, sessionId })); } catch (_) {}
+    }
+    function clearSession() {
+      try { localStorage.removeItem(SESSION_KEY); } catch (_) {}
+    }
+    function loadSession() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+        return (parsed && parsed.code && parsed.sessionId) ? parsed : null;
+      } catch (_) { return null; }
+    }
+
+    // On a fresh page load, hydrate the token from storage so the "connect"
+    // handler below auto-rejoins. state.room carries just the code for now; a
+    // successful rejoin replaces it with the full server summary.
+    (function restoreSession() {
+      const saved = loadSession();
+      if (!saved) return;
+      state.sessionId = saved.sessionId;
+      state.room = { code: saved.code };
+    })();
+
+    const SOLVE_HEADINGS =["", "Unbelievable!", "Word wizard!", "Three-mendous!", "Nice work!", "Close call!", "Last chance hero!"];
     const SOLVE_PUNS = {
       1: ["One guess? We're calling the dictionary police.", "Are you psychic, or just showing off?", "One and done — you barely needed us."],
       2: ["Two-riffic! Your vocabulary is out here flexing.", "Twice as nice — you make this look unfair.", "Two guesses? Your brain runs on something stronger than coffee."],
@@ -2704,6 +2734,7 @@
           state.isHost = false;
           state.playerId = null;
           state.sessionId = null;  // discard session — user intentionally left
+          clearSession();
           target = "home";
         }
 
@@ -2808,6 +2839,7 @@
       state.isHost = Boolean(response.isHost);
       state.sessionId = response.sessionId || null;
       state.room = response.room;
+      saveSession(state.room?.code, state.sessionId);
       preloadAdminConfig();
       renderLobby();
       showScreen("lobby");
@@ -2955,6 +2987,113 @@
       renderKeyboard();
       updateTimer(payload.roundTime);
       showScreen("game");
+    }
+
+    // Rebuild the game screen mid-round after a hard refresh. Mirrors
+    // resetGameBoard's layout setup, then replays THIS player's own guesses
+    // (from the server snapshot) so the board, keyboard colours, timer, and
+    // solved/locked/hint state all match the server's authoritative view.
+    function restoreRoundBoard(rs) {
+      $("roundAppreciation").classList.add("hidden");
+      $("solveOverlay").classList.add("hidden");
+      $("hintPopup").classList.add("hidden");
+      state.pendingChoosing = null;
+      state.leaderboardTapped = false;
+      state.isFinalRound = false;
+
+      const youChose = rs.chooserId === state.playerId;
+      const remaining = Math.max(0, rs.roundTime - rs.elapsed);
+      const guesses = Array.isArray(rs.guesses) ? rs.guesses : [];
+
+      state.game = {
+        round: rs.round,
+        totalRounds: rs.totalRounds,
+        roundTime: rs.roundTime,
+        remaining,
+        hintAvailable: rs.hintAvailable,
+        maxGuesses: rs.maxGuesses,
+        currentRow: guesses.length,
+        currentCol: 0,
+        rows: Array.from({ length: rs.maxGuesses }, () => Array(rs.wordLength).fill("")),
+        feedback: Array.from({ length: rs.maxGuesses }, () => Array(rs.wordLength).fill("")),
+        keyState: {},
+        locked: false,
+        solved: Boolean(rs.solved),
+        hint: rs.hint || "",
+        hintShown: false
+      };
+
+      // Replay each prior guess into the board grid + keyboard colours.
+      guesses.forEach((g, row) => {
+        if (row >= rs.maxGuesses) return;
+        const letters = String(g.guess || "").split("").slice(0, rs.wordLength);
+        state.game.rows[row] = letters.concat(Array(rs.wordLength).fill("")).slice(0, rs.wordLength);
+        state.game.feedback[row] = (g.feedback || []).slice(0, rs.wordLength);
+        letters.forEach((letter, i) => updateKeyState(letter, (g.feedback || [])[i]));
+      });
+
+      const outOfGuesses = state.game.currentRow >= state.game.maxGuesses;
+      if (state.game.solved || outOfGuesses) state.game.locked = true;
+
+      $("roundBadge").textContent = `Round ${rs.round}/${rs.totalRounds}`;
+
+      let ind = document.querySelector(".chooser-indicator");
+      if (!ind) {
+        ind = document.createElement("p");
+        ind.className = "chooser-indicator";
+        const boardEl = document.querySelector(".board-area,#board,.board");
+        if (boardEl?.parentNode) boardEl.parentNode.insertBefore(ind, boardEl);
+      }
+      if (rs.chooserName) {
+        ind.innerHTML = youChose
+          ? `You chose this word — sit back and watch.`
+          : `Word chosen by <strong>${escapeHtml(rs.chooserName)}</strong>`;
+        ind.style.display = "block";
+      } else {
+        ind.style.display = "none";
+      }
+
+      // Hint box / button reflect whether THIS player already revealed the hint.
+      $("hintBox").classList.remove("hint-shown");
+      if (rs.usedHint && rs.hint) {
+        $("hintBox").textContent = `Hint: ${rs.hint}`;
+        $("hintBox").classList.add("hint-shown");
+        $("hintBtn").classList.add("hidden");
+      } else if (rs.hintAvailable) {
+        $("hintBox").textContent = "";
+        $("hintBtn").classList.remove("hidden");
+      } else {
+        $("hintBox").textContent = "No hint this round.";
+        $("hintBtn").classList.add("hidden");
+      }
+
+      $("endRoundBtn").classList.toggle("hidden", !state.isHost);
+
+      // Picker spectator layout — identical toggles to resetGameBoard.
+      $("roundProgress").classList.toggle("hidden", !youChose);
+      ["board", "keyboard", "hintBox", "mobileTapHint"].forEach((id) =>
+        $(id).classList.toggle("hidden", youChose));
+      $("hintBtn").classList.toggle("hidden", youChose || !rs.hintAvailable || Boolean(rs.usedHint && rs.hint));
+      document.querySelector("#gameScreen .game-main").classList.toggle("spectating", youChose);
+
+      if (outOfGuesses && !state.game.solved) {
+        $("hintBox").textContent = "Out of guesses. Waiting for the round to end.";
+      }
+
+      applyProgress(rs.progress);
+      renderBoard();
+      renderKeyboard();
+      updateTimer(remaining);
+
+      // Already solved this round → land on the waiting screen (solvedLeaderboard
+      // was just populated by applyProgress). Otherwise show the live board.
+      if (state.game.solved) {
+        const g = state.game.currentRow;
+        $("solvedSubtitle").textContent = `${g} guess${g === 1 ? "" : "es"} — Solved! Waiting for other players to finish.`;
+        showScreen("solved");
+      } else {
+        showScreen("game");
+      }
     }
 
     function renderBoard() {
@@ -3235,6 +3374,7 @@
     });
 
     socket.on("room:expired", () => {
+      clearSession();  // room is gone — don't try to auto-rejoin it after reload
       showToast("Room expired after inactivity.");
       window.location.reload();
     });
@@ -3268,7 +3408,7 @@
       renderRoundEnd(payload);            // leaderboard ready underneath
       showRoundAppreciation(payload);     // appreciation page on top for ALL users; tap → leaderboard
     });
-    socket.on("game:sessionEnd", (payload) => { $("solveOverlay").classList.add("hidden"); $("roundAppreciation").classList.add("hidden"); renderSessionEnd(payload); });
+    socket.on("game:sessionEnd", (payload) => { clearSession(); $("solveOverlay").classList.add("hidden"); $("roundAppreciation").classList.add("hidden"); renderSessionEnd(payload); });
 
     // ── Auto-rejoin after socket reconnect ───────────────────────────────────
     // socket.io fires "connect" on every (re)connection. On the first connect
@@ -3278,14 +3418,50 @@
     // lets events like game:endRound succeed again.
     socket.on("connect", () => {
       if (!state.sessionId || !state.room?.code) return; // first connect or already home
+      // A cold load (hydrated from storage) lands on "home" with no live UI yet,
+      // so a successful rejoin must navigate. A transient blip keeps the page —
+      // and state.game/board DOM — intact, so we only refresh host UI in place.
+      const fromColdLoad = state.screen === "home";
       socket.emit("room:rejoin", { code: state.room.code, sessionId: state.sessionId }, (res) => {
-        if (!res?.ok) return; // session expired or room closed — stay in current screen
+        if (!res?.ok) {
+          // Stale token (room expired, server restarted, slot gone). On a cold
+          // load, drop it so we settle on home; on a blip, keep it for the next
+          // reconnect attempt.
+          if (fromColdLoad) { clearSession(); state.sessionId = null; state.room = null; }
+          return;
+        }
         state.playerId = socket.id;
         state.isHost  = res.isHost;
         state.room    = res.room;
-        // Refresh host-only UI for whatever screen we're on
+        saveSession(res.room.code, state.sessionId);
         $("endRoundBtn").classList.toggle("hidden", !state.isHost);
-        if (state.screen === "lobby") renderLobby();
+
+        if (!fromColdLoad) {
+          // In-place reconnect — refresh the lobby roster if that's where we are.
+          if (state.screen === "lobby") renderLobby();
+          return;
+        }
+
+        // Cold load: route by room status.
+        if (res.room.status === "session-ended") {
+          clearSession();
+          showToast("That game has already ended.");
+        } else if (res.room.status === "lobby") {
+          preloadAdminConfig();
+          renderLobby();
+          showScreen("lobby");
+        } else if (res.room.status === "playing" && res.roundState) {
+          // Mid-round: rebuild the board from the server's snapshot of our guesses.
+          restoreRoundBoard(res.roundState);
+        } else {
+          // choosing / countdown / round-ended — the next round's events
+          // (game:choosingWord / game:started) will drive the UI; park on the
+          // lobby as a holding view until then.
+          preloadAdminConfig();
+          renderLobby();
+          showScreen("lobby");
+          showToast("Reconnected — you'll re-enter on the next round.");
+        }
       });
     });
 
@@ -3474,6 +3650,7 @@
       state.playerId = null;
       state.isHost = false;
       state.sessionId = null;   // discard token so we don't auto-rejoin the room we left
+      clearSession();
       _histNavFlag = true;
       showScreen("home");
     }

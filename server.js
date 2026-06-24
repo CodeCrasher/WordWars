@@ -431,6 +431,35 @@ function getRoundProgress(room) {
     });
 }
 
+// Snapshot of the CURRENT round from one player's perspective, used to rebuild
+// their game screen after a hard refresh mid-round. Includes THIS player's own
+// guesses + feedback (so the board can be redrawn) plus their solved/hint state.
+// Only the player's own letters are ever sent — never the secret word, and never
+// another player's guesses. The hint text rides along only if this player has
+// already revealed it, so a refresh neither re-charges the penalty nor leaks the
+// hint for free.
+function getActiveRoundSnapshot(room, player) {
+  const chooser = room.players.get(room.currentChooserId);
+  return {
+    wordLength: WORD_LENGTH,
+    maxGuesses: MAX_GUESSES,
+    round: room.currentRound,
+    totalRounds: room.config.totalRounds,
+    roundTime: room.config.roundTime,
+    elapsed: Math.max(0, nowSeconds() - room.roundStartedAt),
+    chooserId: room.currentChooserId,
+    chooserName: chooser ? chooser.name : "",
+    hintAvailable: Boolean(room.currentRoundConfig.hint),
+    progress: getRoundProgress(room),
+    // Player-specific replay data:
+    guesses: player.guesses.map((g) => ({ guess: g.guess, feedback: g.feedback })),
+    solved: player.solved,
+    solvedAt: player.solvedAt,
+    usedHint: player.usedHint,
+    hint: player.usedHint ? (room.currentRoundConfig.hint || "") : ""
+  };
+}
+
 function clearRoomTimers(room) {
   if (room.timerInterval) clearInterval(room.timerInterval);
   if (room.countdownInterval) clearInterval(room.countdownInterval);
@@ -749,7 +778,7 @@ io.on("connection", (socket) => {
     socket.data.roomCode = code;
     socket.join(code);
 
-    callback?.({ ok: true, room: getRoomSummary(room), playerId: socket.id, isHost: true });
+    callback?.({ ok: true, room: getRoomSummary(room), playerId: socket.id, isHost: true, sessionId: host.sessionId });
     socket.emit("room:created", { room: getRoomSummary(room), playerId: socket.id });
   });
 
@@ -811,7 +840,10 @@ io.on("connection", (socket) => {
     touchRoom(room);
 
     emitPlayers(room, "room:playerJoined");
-    callback?.({ ok: true, isHost: wasHost, room: getRoomSummary(room) });
+    const reply = { ok: true, isHost: wasHost, room: getRoomSummary(room) };
+    // Mid-round: hand back enough to rebuild this player's board on a cold load.
+    if (room.status === "playing") reply.roundState = getActiveRoundSnapshot(room, existing);
+    callback?.(reply);
   });
 
   // Host starts the session. Total rounds = 2 x active player count.
