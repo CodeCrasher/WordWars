@@ -10,6 +10,11 @@ const ROOM_EXPIRY_MS = 2 * 60 * 60 * 1000;
 const MAX_PLAYERS = 20;
 const MAX_GUESSES = 6;
 const WORD_LENGTH = 5;
+// Hint cost (server-authoritative, never sent to the client). Revealing the
+// chooser's hint subtracts from the guesser's round score. The cost is locked
+// in at reveal time and decays as the player keeps battling on their own.
+const HINT_PENALTY_BASE = 250; // cost if revealed before any guess
+const HINT_PENALTY_STEP = 20;  // cost drops by this for each guess already made
 // How long the FINAL round's appreciation + leaderboard stays up before the
 // final scoreboard replaces it. Long enough to read the meaning and standings.
 const ROUND_END_DELAY = 8000;
@@ -235,7 +240,9 @@ function makePlayer(socket, name, isHost = false) {
     solved: false,
     solvedAt: null,
     guesses: [],
-    breakdown: null
+    breakdown: null,
+    usedHint: false,
+    hintPenalty: 0
   };
 }
 
@@ -246,6 +253,8 @@ function resetRoundPlayerState(room) {
     player.solvedAt = null;
     player.guesses = [];
     player.breakdown = null;
+    player.usedHint = false;
+    player.hintPenalty = 0;
   }
 }
 
@@ -276,14 +285,18 @@ function calculateScore(room, player) {
   const elapsed = Math.max(0, nowSeconds() - room.roundStartedAt);
   const timeRemaining = Math.max(0, room.config.roundTime - elapsed);
   const unusedGuesses = Math.max(0, MAX_GUESSES - player.guesses.length);
-  const score = 1000 + timeRemaining * 10 + unusedGuesses * 50;
+  const base = 1000;
+  const timeBonus = timeRemaining * 10;
+  const guessBonus = unusedGuesses * 50;
+  const penalty = player.usedHint ? player.hintPenalty : 0;
   return {
-    base: 1000,
+    base,
     timeRemaining,
-    timeBonus: timeRemaining * 10,
+    timeBonus,
     unusedGuesses,
-    guessBonus: unusedGuesses * 50,
-    score
+    guessBonus,
+    hintPenalty: penalty,
+    score: Math.max(0, base + timeBonus + guessBonus - penalty)
   };
 }
 
@@ -512,7 +525,6 @@ function startGameRound(room, roundConfig = null) {
   io.to(room.code).emit("game:started", {
     wordLength: WORD_LENGTH,
     maxGuesses: MAX_GUESSES,
-    category: room.currentRoundConfig.category,
     hintAvailable: Boolean(room.currentRoundConfig.hint),
     round: room.currentRound,
     totalRounds: room.config.totalRounds,
@@ -677,7 +689,7 @@ function detachFromRoom(socket) {
 
 io.on("connection", (socket) => {
   // Host creates room with name, PIN, and round timer only.
-  // Word, category, hint are set by each round's chooser.
+  // Word and hint are set by each round's chooser.
   // Total rounds = 2x player count, calculated when session starts.
   socket.on("room:create", (payload = {}, callback) => {
     const pin = String(payload.pin || "");
@@ -724,7 +736,6 @@ io.on("connection", (socket) => {
       },
       currentRoundConfig: {
         word: null,
-        category: null,
         hint: ""
       }
     };
@@ -838,8 +849,6 @@ io.on("connection", (socket) => {
     if (room.status !== "choosing") return callback?.({ ok: false, error: "Room is not in choosing state." });
 
     const word = normalizeWord(payload?.word);
-    const rawCategory = String(payload.category || "Custom").trim().slice(0, 32);
-    const customCategory = String(payload.customCategory || "").trim().slice(0, 32);
     const hint = String(payload.hint || "").trim().slice(0, 140);
 
     if (!isFiveLetterWord(word)) {
@@ -856,11 +865,8 @@ io.on("connection", (socket) => {
       return callback?.({ ok: false, error: "That's not a word we recognise. Try a common English noun, verb, or adjective (no names or places)." });
     }
 
-    const resolvedCategory = (rawCategory === "Custom" && customCategory)
-      ? customCategory : rawCategory;
-
     room.waitingForWord = false;
-    startGameRound(room, { word, category: resolvedCategory, hint, definition: lookup.definition || "" });
+    startGameRound(room, { word, hint, definition: lookup.definition || "" });
     callback?.({ ok: true });
   });
 
@@ -954,8 +960,7 @@ io.on("connection", (socket) => {
         feedback,
         solved,
         guessesUsed: player.guesses.length,
-        maxGuesses: MAX_GUESSES,
-        hint: player.guesses.length >= 3 ? room.currentRoundConfig.hint || "" : ""
+        maxGuesses: MAX_GUESSES
       });
 
       if (allActivePlayersSolved(room)) {
@@ -964,6 +969,32 @@ io.on("connection", (socket) => {
     } finally {
       player.guessing = false;
     }
+  });
+
+  // Player opts in to reveal the chooser's hint. The cost is computed and locked
+  // in server-side at reveal time — it decays the longer the player has battled
+  // on their own — and is subtracted from their round score only when they solve.
+  // The numeric cost is never sent to the client.
+  socket.on("game:useHint", (_payload, callback) => {
+    const room = getRoomForSocket(socket);
+    const player = room ? findPlayer(room, socket.id) : null;
+
+    if (!room || !player) return callback?.({ ok: false });
+    if (room.status !== "playing") return callback?.({ ok: false });
+    if (!room.currentRoundConfig.hint) return callback?.({ ok: false });
+
+    // Idempotent: a second reveal never recomputes or re-applies the cost.
+    if (player.usedHint) {
+      return callback?.({ ok: true, hint: room.currentRoundConfig.hint });
+    }
+
+    player.hintPenalty = Math.max(
+      0,
+      HINT_PENALTY_BASE - HINT_PENALTY_STEP * player.guesses.length
+    );
+    player.usedHint = true;
+
+    callback?.({ ok: true, hint: room.currentRoundConfig.hint });
   });
 
   // Host force-ends the active round.

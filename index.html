@@ -1812,6 +1812,7 @@
       color: #a8771a; border-color: color-mix(in srgb, var(--yellow) 40%, var(--line));
       font-weight: 600;
     }
+    .hint-btn { margin-top: 8px; align-self: center; padding: 8px 18px; font-size: 0.92rem; }
 
     /* ── Leaderboard / standings / progress rows ────────────── */
     .leader-row, .score-row, .standing-row, .progress-row, .player-row {
@@ -1982,7 +1983,7 @@
         <div class="home-hero">
           <div class="home-eyebrow">⚡ Fast-fingers word racing</div>
           <h1 class="home-h1">Guess the word. Beat your friends.</h1>
-          <p class="home-lead">Every round, one player hides a secret word — everyone else races to crack it. Fastest, sharpest guesser climbs the board.</p>
+          <p class="home-lead">Every round, one player hides a secret word — everyone else races to crack it. Fastest, sharpest guesser climbs the board. Stuck? Reveal the chooser's hint anytime — it trims a few points off your round, but the longer you battle on your own first, the cheaper it gets.</p>
           <div class="home-cta">
             <button class="btn primary" id="showCreate">Create a room →</button>
             <button class="btn" id="showJoin">Join with a code</button>
@@ -1991,7 +1992,7 @@
             <div class="feature-card">
               <div class="feature-ic" style="background:color-mix(in srgb,var(--accent) 14%,transparent)">🎯</div>
               <div class="feature-t">Everyone picks</div>
-              <div class="feature-b">Each round a different player sets the secret word and category.</div>
+              <div class="feature-b">Each round a different player sets the secret word (and an optional hint).</div>
             </div>
             <div class="feature-card">
               <div class="feature-ic" style="background:color-mix(in srgb,#ff8a3d 16%,transparent)">⏱️</div>
@@ -2149,29 +2150,8 @@
                 <span class="word-hint" id="chooserWordHint"></span>
               </div>
               <div class="field">
-                <label for="chooserCategory">Category</label>
-                <select id="chooserCategory">
-                  <option>Animals</option>
-                  <option>Food &amp; Drink</option>
-                  <option>Science</option>
-                  <option>Sports</option>
-                  <option>Geography</option>
-                  <option>Movies &amp; TV</option>
-                  <option>Music</option>
-                  <option>Tech</option>
-                  <option>History</option>
-                  <option>Mythology</option>
-                  <option value="Custom">Custom</option>
-                </select>
-              </div>
-              <div class="field hidden" id="chooserCustomCategoryField">
-                <label for="chooserCustomCategory">Custom category</label>
-                <input id="chooserCustomCategory" maxlength="32"
-                       placeholder="e.g. 90s Movies"/>
-              </div>
-              <div class="field">
                 <label for="chooserHint">
-                  Hint (optional — shown after 3 wrong guesses)
+                  Hint (optional — guessers can reveal it at a small score cost)
                 </label>
                 <input id="chooserHint" maxlength="140"
                        placeholder="e.g. You eat this for breakfast"/>
@@ -2210,14 +2190,14 @@
           <div class="panel game-main">
             <div class="game-meta">
               <div class="badge-row">
-                <span class="badge" id="gameCategory">Category</span>
                 <span class="badge" id="roundBadge">Round 1/1</span>
               </div>
               <div class="timer" id="timerText">3:00</div>
             </div>
             <div class="round-progress hidden" id="roundProgress"></div>
             <div class="board" id="board"></div>
-            <div class="hint-box" id="hintBox">Hint available after 3 failed guesses.</div>
+            <div class="hint-box" id="hintBox">No hint this round.</div>
+            <button class="btn hint-btn hidden" id="hintBtn">Reveal Hint</button>
             <div class="mobile-tap-hint" id="mobileTapHint">⌨️ Tap here to type</div>
             <div class="keyboard" id="keyboard"></div>
             <input id="mobileCapture" class="mobile-capture" type="text"
@@ -2353,7 +2333,6 @@
         totalRounds: 1,
         roundTime: 180,
         remaining: 180,
-        category: "",
         hintAvailable: false,
         maxGuesses: 6,
         currentRow: 0,
@@ -2920,7 +2899,6 @@
         totalRounds: payload.totalRounds,
         roundTime: payload.roundTime,
         remaining: payload.roundTime,
-        category: payload.category,
         hintAvailable: payload.hintAvailable,
         maxGuesses: payload.maxGuesses,
         currentRow: 0,
@@ -2933,7 +2911,6 @@
         hint: "",
         hintShown: false
       };
-      $("gameCategory").textContent = payload.category;
       $("roundBadge").textContent = `Round ${payload.round}/${payload.totalRounds}`;
 
       let ind = document.querySelector(".chooser-indicator");
@@ -2953,7 +2930,13 @@
         ind.style.display = "none";
       }
       $("hintBox").classList.remove("hint-shown");
-      $("hintBox").textContent = payload.hintAvailable ? "💡 Hint unlocks after 3 guesses · 3 to go" : "No hint this round.";
+      if (payload.hintAvailable) {
+        $("hintBox").textContent = "";
+        $("hintBtn").classList.remove("hidden");
+      } else {
+        $("hintBox").textContent = "No hint this round.";
+        $("hintBtn").classList.add("hidden");
+      }
       $("endRoundBtn").classList.toggle("hidden", !state.isHost);
       // The picker can't guess, so swap their dead board/keyboard for the live
       // spectator panel. Guessers keep their board untouched (zero layout risk)
@@ -2963,8 +2946,8 @@
       $("roundProgress").classList.toggle("hidden", !youChose);
       ["board", "keyboard", "hintBox", "mobileTapHint"].forEach((id) =>
         $(id).classList.toggle("hidden", youChose));
-      // Category is a hint for guessers — pointless to the picker who chose the word.
-      $("gameCategory").classList.toggle("hidden", youChose);
+      // The reveal-hint button is only for guessers, and only when a hint exists.
+      $("hintBtn").classList.toggle("hidden", youChose || !payload.hintAvailable);
       // Center the picker's view on just the live board (clean spectator layout).
       document.querySelector("#gameScreen .game-main").classList.toggle("spectating", youChose);
       applyProgress(payload.progress);
@@ -3061,18 +3044,6 @@
       renderKeyboard();
       animateRow(rowIndex);
 
-      if (response.hint) {
-        state.game.hint = response.hint;
-        $("hintBox").textContent = `💡 Hint: ${response.hint}`;
-        $("hintBox").classList.add("hint-shown");
-        // First time the hint unlocks (after 3 tries) and we haven't just solved:
-        // surface it as a popup that stays until the player taps to keep guessing.
-        if (!state.game.hintShown && !response.solved) {
-          state.game.hintShown = true;
-          showHintPopup(response.hint);
-        }
-      }
-
       if (response.solved) {
         state.game.solved = true;
         const g = response.guessesUsed;
@@ -3087,9 +3058,6 @@
         state.game.locked = true;
         $("hintBox").textContent = "Out of guesses. Waiting for the round to end.";
         showSolveOverlay(false, state.game.maxGuesses, () => {});
-      } else if (state.game.hintAvailable && !state.game.hint && state.game.currentRow < 3) {
-        // Count down to the 3-guess hint unlock.
-        $("hintBox").textContent = `💡 Hint unlocks after 3 guesses · ${3 - state.game.currentRow} to go`;
       }
     }
 
@@ -3432,18 +3400,9 @@
         val.length !== 5 || !/^[A-Za-z]{5}$/.test(val);
     });
 
-    // ── Chooser category custom toggle ───────────────────────────
-    $("chooserCategory").addEventListener("change", () => {
-      $("chooserCustomCategoryField").classList.toggle(
-        "hidden", $("chooserCategory").value !== "Custom"
-      );
-    });
-
     // ── Chooser submit word ───────────────────────────────────────
     $("chooserSubmitBtn").addEventListener("click", () => {
       const word = ($("chooserWord").value || "").trim().toUpperCase();
-      const category = $("chooserCategory").value;
-      const customCategory = ($("chooserCustomCategory")?.value || "").trim();
       const hint = ($("chooserHint").value || "").trim();
       const err = $("chooserError");
 
@@ -3456,13 +3415,28 @@
       $("chooserSubmitBtn").disabled = true;
       $("chooserSubmitBtn").textContent = "Validating…";
 
-      socket.emit("game:submitWord", { word, category, customCategory, hint }, res => {
+      socket.emit("game:submitWord", { word, hint }, res => {
         $("chooserSubmitBtn").textContent = "Set Word & Start Round";
         if (!res.ok) {
           err.textContent = res.error || "Failed to set word.";
           err.classList.remove("hidden");
           $("chooserSubmitBtn").disabled = false;
         }
+      });
+    });
+
+    // ── Reveal hint ───────────────────────────────────────────────
+    // Opt-in: ask the server to reveal the chooser's hint. The cost is computed
+    // and applied entirely server-side — never shown to the player.
+    $("hintBtn").addEventListener("click", () => {
+      socket.emit("game:useHint", {}, res => {
+        if (res && res.ok) {
+          state.game.hint = res.hint;
+          $("hintBtn").classList.add("hidden");
+          $("hintBox").textContent = `Hint: ${res.hint}`;
+          $("hintBox").classList.add("hint-shown");
+        }
+        // Fail quietly otherwise — leave the button as-is.
       });
     });
 
@@ -3475,7 +3449,7 @@
       $("countdownBanner").classList.remove("active");
       state.game = {
         round: 0, totalRounds: 0, roundTime: 180, remaining: 180,
-        category: "", hintAvailable: false, maxGuesses: 6,
+        hintAvailable: false, maxGuesses: 6,
         currentRow: 0, currentCol: 0,
         rows: Array.from({ length: 6 }, () => Array(5).fill("")),
         feedback: Array.from({ length: 6 }, () => Array(5).fill("")),
