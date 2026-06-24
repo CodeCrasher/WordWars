@@ -11,6 +11,9 @@
     /* ── WordWars redesign tokens ──────────────────────────────────────
        Daylight is the default (set on .app[data-theme="light"]); :root holds
        the Midnight (dark) palette used when the theme toggle flips to dark. */
+    /* ═══════════════════════════════════════════════
+       SECTION: CSS VARIABLES & RESET
+    ═══════════════════════════════════════════════ */
     :root {
       /* Midnight (active when the theme toggle sets data-theme="dark") */
       --bg: #17141f;
@@ -139,6 +142,9 @@
       margin-left: 1px;
       opacity: 0.8;
     }
+    /* ═══════════════════════════════════════════════
+       SECTION: ANIMATIONS
+    ═══════════════════════════════════════════════ */
     @keyframes floatUp {
       0%   { transform: translateY(0) rotate(var(--rot0)); opacity: 0; }
       12%  { opacity: var(--maxop); }
@@ -383,6 +389,17 @@
       align-items: start;
     }
 
+    /* Fix 19: cap the sidebar width and give the main area more room on wide screens. */
+    .layout > aside.panel,
+    .game-wrap > aside.panel {
+      max-width: 360px;
+    }
+    @media (min-width: 1200px) {
+      .layout {
+        grid-template-columns: minmax(0, 1fr) 360px;
+      }
+    }
+
     .panel {
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -524,8 +541,11 @@
       border-color: var(--danger);
     }
 
+    /* ═══════════════════════════════════════════════
+       SECTION: GAME BOARD
+    ═══════════════════════════════════════════════ */
     .board {
-      width: min(420px, calc(100vw - 68px)); /* 32px .app margins + 36px .panel padding */
+      width: min(420px, calc(100vw - 24px)); /* Fix 11: give the board more room on narrow screens */
       display: grid;
       grid-template-rows: repeat(6, 1fr);
       gap: 8px;
@@ -625,6 +645,9 @@
         0 5px 9px rgba(0, 0, 0, 0.26);
     }
 
+    /* ═══════════════════════════════════════════════
+       SECTION: KEYBOARD
+    ═══════════════════════════════════════════════ */
     .keyboard {
       width: min(560px, 100%);
       display: grid;
@@ -1113,7 +1136,19 @@
       color: var(--muted);
     }
 
+    /* ═══════════════════════════════════════════════
+       SECTION: MOBILE / RESPONSIVE
+    ═══════════════════════════════════════════════ */
     @media (max-width: 860px) {
+      /* Fix 11: tighter app padding + board gap to reclaim space on mobile. */
+      .app {
+        padding: 12px 0 40px;
+      }
+      .board,
+      .board-row {
+        gap: 6px;
+      }
+
       .layout,
       .game-wrap {
         grid-template-columns: 1fr;
@@ -1126,9 +1161,9 @@
       }
 
       .key {
-        /* (100vw - 68px container margins - 54px for 9 gaps) / 10 keys */
-        width: clamp(20px, calc((100vw - 122px) / 10), 42px);
-        height: 44px;
+        /* Fix 10: wider keys + taller tap target (44px → 48px) for thumb reach. */
+        width: clamp(28px, calc((100vw - 80px) / 10), 42px);
+        height: 48px;
         font-size: 0.82rem;
         touch-action: manipulation;
         flex: 1;
@@ -1316,7 +1351,7 @@
       }
       .board {
         width: 100%;
-        max-width: min(255px, calc(100vw - 52px));
+        max-width: min(300px, calc(100vw - 28px)); /* Fix 11: less cramped at ~375px */
         gap: 5px;
       }
       .board-row {
@@ -2276,6 +2311,7 @@
       <p id="solveHeading" class="solve-heading"></p>
       <p id="solvePun" class="solve-pun"></p>
       <p id="solveStats" class="solve-stats"></p>
+      <p id="solveCount" class="solve-stats"></p>
     </div>
   </div>
 
@@ -2311,12 +2347,23 @@
   </div>
 
   <div class="countdown-banner" id="countdownBanner"><span id="countdownText">Starting in 10</span></div>
+  <div class="countdown-banner" id="reconnectBanner"><span>Reconnecting…</span></div>
   <div class="toast-stack" id="toastStack"></div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    const socket = io();
+    /* ═══════════════════════════════════════════════
+       SECTION: SOCKET EVENTS & CONNECTION
+    ═══════════════════════════════════════════════ */
+    const socket = io({
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1500
+    });
 
+    /* ═══════════════════════════════════════════════
+       SECTION: GAME STATE
+    ═══════════════════════════════════════════════ */
     const state = {
       screen: "home",
       playerId: null,
@@ -2493,8 +2540,44 @@
       const t = $("livePillText");
       if (t) t.textContent = on ? "Live" : "Offline";
     }
-    socket.on("connect", () => setLive(true));
+    socket.on("connect", () => { setLive(true); $("reconnectBanner").classList.remove("active"); });
     socket.on("disconnect", () => setLive(false));
+
+    // Reconnection UX (Fix 5). Manager-level events drive a "Reconnecting…" banner
+    // (reusing .countdown-banner styles). After the configured attempts are
+    // exhausted, prompt the player to refresh.
+    socket.io.on("reconnect_attempt", () => $("reconnectBanner").classList.add("active"));
+    socket.io.on("reconnect", () => $("reconnectBanner").classList.remove("active"));
+    socket.io.on("reconnect_failed", () => {
+      $("reconnectBanner").classList.remove("active");
+      showToast("Connection lost. Please refresh the page.");
+    });
+
+    // Fix 9: keep the board visible when the soft keyboard opens on mobile (iOS
+    // pushes content up). Scroll the board into view on capture-input focus and
+    // whenever the visual viewport shrinks past a keyboard-sized threshold.
+    (function mobileKeyboardFit() {
+      const board = () => $("board");
+      const onGame = () => document.querySelector("section.screen.active")?.id === "gameScreen";
+      const cap = $("mobileCapture");
+      if (cap) {
+        cap.addEventListener("focus", () => {
+          if (onGame()) board()?.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
+      }
+      if (window.visualViewport) {
+        let base = window.visualViewport.height;
+        window.visualViewport.addEventListener("resize", () => {
+          const vv = window.visualViewport;
+          if (base - vv.height > 150 && onGame()) {
+            // Keyboard open — pin the board above it.
+            board()?.scrollIntoView({ behavior: "smooth", block: "center" });
+          } else if (vv.height >= base) {
+            base = vv.height; // keyboard closed / orientation change — reset baseline
+          }
+        });
+      }
+    })();
 
     const CHOOSER_HEADINGS = ["Word Picker!", "Mastermind!", "Sneaky pick!"];
     const CHOOSER_STUMP_PUNS = [
@@ -2620,6 +2703,9 @@
       _histNavFlag = false;
     }
 
+    /* ═══════════════════════════════════════════════
+       SECTION: UI HELPERS
+    ═══════════════════════════════════════════════ */
     function showToast(message) {
       const toast = document.createElement("div");
       toast.className = "toast";
@@ -3373,6 +3459,16 @@
       showScreen("home");
     });
 
+    // Fix 15: the host left and didn't return within the grace window — the room
+    // is gone. Send everyone home with a clear message.
+    socket.on("room:hostLeft", ({ message }) => {
+      clearSession();
+      showToast(message || "Host disconnected. Game ended.");
+      state.room = null;
+      state.isHost = false;
+      showScreen("home");
+    });
+
     socket.on("room:expired", () => {
       clearSession();  // room is gone — don't try to auto-rejoin it after reload
       showToast("Room expired after inactivity.");
@@ -3382,9 +3478,20 @@
     socket.on("room:error", ({ error }) => showToast(error || "Room error."));
 
     socket.on("game:countdown", ({ remaining }) => {
-      $("countdownBanner").classList.toggle("active", remaining > 0);
-      $("countdownText").textContent = `Starting in ${remaining}`;
-      if (remaining <= 0) $("countdownBanner").classList.remove("active");
+      if (remaining > 0) {
+        $("countdownBanner").classList.add("active");
+        $("countdownText").textContent = `Starting in ${remaining}`;
+        return;
+      }
+      // Fix 16: brief "Get ready…" beat as the countdown hands off to the round.
+      // (game:started clears it the moment the board goes live.)
+      $("countdownText").textContent = "Get ready…";
+      $("countdownBanner").classList.add("active");
+      setTimeout(() => {
+        if ($("countdownText").textContent === "Get ready…") {
+          $("countdownBanner").classList.remove("active");
+        }
+      }, 1000);
     });
 
     socket.on("game:started", (payload) => {
@@ -3542,6 +3649,22 @@
         const el = $(id);
         if (el) el.innerHTML = html;
       });
+      updateSolveCount(progress);
+    }
+
+    // Fix 17: live "X of N solved" visibility for a player who's already done.
+    // Derived from the same progress feed every client already receives — no new
+    // event needed (the secret word is never part of this payload).
+    function updateSolveCount(progress) {
+      if (!Array.isArray(progress)) return;
+      const guessers = progress.filter((p) => !p.isChooser);
+      const total = guessers.length;
+      const solved = guessers.filter((p) => p.solved).length;
+      if (!total) return;
+      const countEl = $("solveCount");
+      if (countEl) countEl.textContent = `Waiting for others to finish… (${solved} of ${total} solved)`;
+      const sub = $("solvedSubtitle");
+      if (sub) sub.textContent = `${solved} of ${total} solved — waiting for the round to finish…`;
     }
 
     socket.on("game:choosingWord", (payload) => {

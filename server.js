@@ -5,7 +5,36 @@ const { Server } = require("socket.io");
 const { v4: uuidv4 } = require("uuid");
 
 const PORT = process.env.PORT || 3000;
+const NODE_ENV = process.env.NODE_ENV || "development";
+const IS_PROD = NODE_ENV === "production";
+
+// ── Structured logging ──────────────────────────────────────────────────────
+// One JSON object per line so Railway's log tail stays grep/parse-friendly.
+function logEvent(level, event, fields = {}) {
+  const line = JSON.stringify({ ts: new Date().toISOString(), level, event, ...fields });
+  if (level === "error" || level === "fatal") console.error(line);
+  else console.log(line);
+}
+
+// Process-level safety nets — capture crashes instead of dying silently.
+process.on("uncaughtException", (err) => {
+  logEvent("error", "uncaught_exception", { message: err && err.message, stack: err && err.stack });
+});
+process.on("unhandledRejection", (reason) => {
+  logEvent("error", "unhandled_rejection", {
+    reason: reason instanceof Error ? reason.message : String(reason),
+    stack: reason && reason.stack
+  });
+});
+
 const DEFAULT_PIN = process.env.ADMIN_PIN || "1234";
+// SECURITY: never run production on the well-known default admin PIN.
+if (IS_PROD && DEFAULT_PIN === "1234") {
+  logEvent("fatal", "insecure_admin_pin", {
+    message: "ADMIN_PIN is still the default '1234' in production. Set a strong ADMIN_PIN before deploying."
+  });
+  process.exit(1);
+}
 const ROOM_EXPIRY_MS = 2 * 60 * 60 * 1000;
 const MAX_PLAYERS = 20;
 const MAX_GUESSES = 6;
@@ -26,21 +55,53 @@ const ROUND_REVEAL_DELAY = 4000;
 
 const MW_API_KEY = process.env.MW_API_KEY;
 if (!MW_API_KEY) {
-  console.warn("WARNING: MW_API_KEY not set. Word validation will reject all words.");
+  if (IS_PROD) {
+    // In production the dictionary key is mandatory — fail fast and loud.
+    logEvent("fatal", "missing_mw_api_key", {
+      message: "MW_API_KEY is not set. Get a free key at https://dictionaryapi.com/register/index"
+    });
+    process.exit(1);
+  }
+  // In development we fail-open: words are accepted unverified and definitions skipped.
+  logEvent("warn", "missing_mw_api_key", {
+    message: "MW_API_KEY not set — word validation falls back to fail-open. Get a free key at https://dictionaryapi.com/register/index"
+  });
 }
 const wordCache = new Map();
 const CACHE_MAX_SIZE = 2000;
+
+// CORS origin policy. In production an explicit ALLOWED_ORIGIN is required; if it
+// is missing we fall back to the Railway-provided public domain rather than a
+// wildcard, and deny cross-origin entirely if neither is set. In development we
+// default to "*" for convenience.
+const ALLOWED_ORIGIN = (() => {
+  if (!IS_PROD) return process.env.ALLOWED_ORIGIN || "*";
+  if (process.env.ALLOWED_ORIGIN) return process.env.ALLOWED_ORIGIN;
+  if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+    logEvent("warn", "allowed_origin_unset", {
+      message: `ALLOWED_ORIGIN not set in production — restricting to RAILWAY_PUBLIC_DOMAIN (${process.env.RAILWAY_PUBLIC_DOMAIN}).`
+    });
+    return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
+  }
+  logEvent("warn", "allowed_origin_unset", {
+    message: "ALLOWED_ORIGIN and RAILWAY_PUBLIC_DOMAIN both unset in production — denying cross-origin requests."
+  });
+  return false;
+})();
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.ALLOWED_ORIGIN || "*",
+    origin: ALLOWED_ORIGIN,
     methods: ["GET", "POST"]
   },
   transports: ["websocket", "polling"],
   allowEIO3: true
 });
+// Note: room state is in-process only. A Railway redeploy during an active game
+// will clear all rooms. Players will need to start a new game. (Reconnects within
+// a live process are handled via the room:rejoin flow, which re-emits room state.)
 const rooms = new Map();
 
 app.use(express.static(__dirname));
@@ -95,7 +156,7 @@ async function lookupWord(word) {
     const url = `https://www.dictionaryapi.com/api/v3/references/collegiate/json/${encodeURIComponent(normalized)}?key=${MW_API_KEY}`;
     const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
     // HTTP error (5xx/429/etc.) is an UNKNOWN result — do not cache, fail-open.
-    if (!response.ok) { console.error("MW API HTTP", response.status); return { valid: null, definition: "" }; }
+    if (!response.ok) { logEvent("error", "mw_api_http_error", { statusCode: response.status, word: normalized }); return { valid: null, definition: "" }; }
 
     const data = await response.json();
     if (!Array.isArray(data) || data.length === 0 || typeof data[0] === "string") {
@@ -130,7 +191,7 @@ async function lookupWord(word) {
 
   } catch (err) {
     // Network failure / 5s timeout abort — UNKNOWN, do not cache, fail-open.
-    console.error("MW API error:", err.message);
+    logEvent("error", "mw_api_error", { word: normalized, message: err.message });
     return { valid: null, definition: "" };
   }
 }
@@ -528,6 +589,10 @@ function allActivePlayersSolved(room) {
   return activePlayers.length > 0 && activePlayers.every(p => p.solved);
 }
 
+// The round timer is SERVER-AUTHORITATIVE. This interval broadcasts the canonical
+// countdown (game:timerTick) every second and, when it reaches zero, advances the
+// game itself via finishRound — independent of any client action. The client's
+// timer display only mirrors these ticks; it never drives round expiry.
 function startRoundTimer(room) {
   room.timerInterval = setInterval(() => {
     const remaining = Math.max(0, room.config.roundTime - (nowSeconds() - room.roundStartedAt));
@@ -639,6 +704,24 @@ function promoteOrCloseRoom(room) {
   });
 }
 
+// Fix 15: when the host drops, give them a grace window to reconnect (this pairs
+// with the session-reconnect flow — a brief blip no longer disrupts the room).
+// If the host is still absent after the window, end the game for everyone and
+// clean up the room. The grace timer is cancelled if the host reconnects.
+const HOST_GRACE_MS = 10000;
+function startHostGrace(room) {
+  if (room.hostGraceTimer) return; // already counting down
+  room.hostGraceTimer = setTimeout(() => {
+    room.hostGraceTimer = null;
+    if (!rooms.has(room.code)) return;
+    const host = room.players.get(room.hostId);
+    if (host && host.connected) return; // host reconnected within the window
+    clearRoomTimers(room);
+    io.to(room.code).emit("room:hostLeft", { message: "Host disconnected. Game ended." });
+    rooms.delete(room.code);
+  }, HOST_GRACE_MS);
+}
+
 function removeExpiredRooms() {
   const cutoff = Date.now() - ROOM_EXPIRY_MS;
   for (const [code, room] of rooms.entries()) {
@@ -717,6 +800,11 @@ function detachFromRoom(socket) {
 }
 
 io.on("connection", (socket) => {
+  // Capture transport-level socket errors so they surface in the Railway logs.
+  socket.on("error", (err) => {
+    logEvent("error", "socket_error", { socketId: socket.id, message: err && err.message });
+  });
+
   // Host creates room with name, PIN, and round timer only.
   // Word and hint are set by each round's chooser.
   // Total rounds = 2x player count, calculated when session starts.
@@ -831,7 +919,11 @@ io.on("connection", (socket) => {
     existing.active = true;
     room.players.set(socket.id, existing);
 
-    if (wasHost) room.hostId = socket.id;
+    if (wasHost) {
+      room.hostId = socket.id;
+      // Host made it back within the grace window — cancel the end-game timer.
+      if (room.hostGraceTimer) { clearTimeout(room.hostGraceTimer); room.hostGraceTimer = null; }
+    }
     if (wasChooser) room.currentChooserId = socket.id;
     room.playerOrder = room.playerOrder.map(id => id === oldId ? socket.id : id);
 
@@ -1080,7 +1172,8 @@ io.on("connection", (socket) => {
     touchRoom(room);
 
     if (socket.id === room.hostId) {
-      promoteOrCloseRoom(room);
+      // Fix 15: grace window before ending the game, in case of a brief drop.
+      startHostGrace(room);
     }
 
     // If the disconnected player was the current chooser
