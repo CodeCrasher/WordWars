@@ -40,6 +40,9 @@ efficiency. Built with Node.js, Express, and Socket.io.
                    Collegiate Dictionary API key.
                    Get a free key at https://dictionaryapi.com/register/index
                    Set in Railway Dashboard → Service → Variables
+  REDIS_URL      → Optional. When set, active games are snapshotted to Redis and
+                   restored on boot, surviving a redeploy/restart. Add a Railway
+                   Redis service and reference its REDIS_URL. Unset = in-memory only.
 
 ## Useful Commands
   railway logs      # tail live logs
@@ -47,11 +50,16 @@ efficiency. Built with Node.js, Express, and Socket.io.
   railway rollback  # revert to previous deploy
   npm test          # run smoke tests (health, socket handshake, env checks)
 
-## Known Limitations
-  Active games do not survive a Railway redeploy or restart. In-process room
-  state is cleared on every deploy. Warn players before pushing to production
-  mid-session. (Brief client/network drops are recovered via socket reconnection,
-  but a full server restart cannot be — there is no persistence layer by design.)
+## Persistence & Redeploys
+  Set REDIS_URL (e.g. a Railway Redis service) and active games survive a
+  redeploy/restart: room state is snapshotted to Redis every few seconds and on
+  shutdown, and restored on boot — players auto-reconnect into their round.
+  On SIGTERM the server also broadcasts a "server is updating" notice so players
+  get a clear heads-up during the brief swap.
+
+  Without REDIS_URL the server runs in-memory only: a redeploy/restart clears all
+  active games (players are dropped to a fresh game). Brief client/network drops
+  are always recovered via socket reconnection regardless of Redis.
 
 ## Estimated Cost
   ~$5-10/month on Railway Hobby plan

@@ -1257,7 +1257,7 @@
       .app {
         min-height: 100dvh;
         min-height: -webkit-fill-available;
-        padding: 10px 0 14px;
+        padding: 10px 0 8px;
       }
       /* Safe-area padding for notched phones */
       .screen {
@@ -1332,8 +1332,46 @@
         font-size: 0.9rem;
       }
 
-      /* FIX 5 — Game screen layout */
+      /* Game screen layout — fit the whole round (board + keyboard) inside the
+         visible viewport so the on-screen keyboard never falls behind the
+         browser chrome. The app becomes a flex column: fixed topbar + the active
+         screen filling the rest; inside the game screen the board flex-shrinks
+         and the keyboard is pinned to the bottom. */
+      #app {
+        display: flex;
+        flex-direction: column;
+      }
+      #app > .topbar { flex: 0 0 auto; }
+      /* The <main> wrapper must carry the flex chain down to the active screen. */
+      #app > main {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      /* While a round is on screen, pin the app to exactly the viewport height so
+         flexbox is forced to shrink the board and keep the keyboard fully visible
+         (other screens keep min-height:100dvh and scroll normally). */
+      #app:has(#gameScreen.active) {
+        height: 100dvh;
+        max-height: 100dvh;
+        overflow: hidden;
+      }
+
+      #gameScreen.active {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-height: 0;
+        min-width: 0;
+        padding-bottom: 0; /* keyboard supplies its own safe-area inset */
+      }
       #gameScreen .game-wrap {
+        flex: 1 1 auto;
+        min-height: 0;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
         gap: 8px;
       }
       /* Hide live-leaderboard aside — saves critical vertical space on mobile.
@@ -1342,9 +1380,42 @@
         display: none;
       }
       #gameScreen .game-main {
-        padding: 10px;
-        gap: 10px;
+        flex: 1 1 auto;
+        min-height: 0;
+        min-width: 0;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 8px 10px;
+        gap: 8px;
       }
+      /* Board grows to fill the space left between the meta row and the keyboard,
+         driven by HEIGHT with width following the 5:6 ratio so tiles stay square.
+         max-width caps it on wider phones; it never pushes the keyboard off. */
+      #gameScreen .board {
+        flex: 1 1 0;
+        min-height: 0;
+        width: auto;
+        height: auto;
+        max-width: min(300px, calc(100vw - 28px));
+        /* Cap height to the width-derived 5:6 value so tiles stay square on tall
+           screens, while still shrinking to fit on short ones. */
+        max-height: calc(min(300px, 100vw - 28px) * 1.2);
+        aspect-ratio: 5 / 6;
+      }
+      #gameScreen .keyboard {
+        flex: 0 0 auto;
+        margin-top: auto;
+      }
+      /* Slightly shorter keys on the game screen so the board keeps real estate;
+         still well above the 44px touch-target minimum. */
+      #gameScreen .key { height: 48px; }
+      /* Distribute keys by flex (no fixed width basis) so all 10 always fit the
+         row width — otherwise the right-hand keys (P, L, ⌫) overflow off-screen. */
+      #gameScreen .keyboard { padding: 6px 2px; gap: 6px; }
+      #gameScreen .key-row { gap: 4px; padding: 0; }
+      #gameScreen .key:not(.wide) { flex: 1 1 0; min-width: 0; width: auto; }
       .game-meta {
         width: 100%;
         max-width: 100%;
@@ -1847,6 +1918,9 @@
       color: #a8771a; border-color: color-mix(in srgb, var(--yellow) 40%, var(--line));
       font-weight: 600;
     }
+    /* An empty hint box (hint available but not yet revealed) reserves a big
+       blank bar — collapse it so it never eats vertical space on mobile. */
+    .hint-box:empty { display: none; }
     .hint-btn { margin-top: 8px; align-self: center; padding: 8px 18px; font-size: 0.92rem; }
 
     /* ── Leaderboard / standings / progress rows ────────────── */
@@ -3476,6 +3550,12 @@
     });
 
     socket.on("room:error", ({ error }) => showToast(error || "Room error."));
+
+    // Graceful drain: the server is being redeployed. Reassure the player — the
+    // socket will drop and auto-reconnect, and (with persistence) the game resumes.
+    socket.on("server:restarting", ({ message }) => {
+      showToast(message || "Server is updating — reconnecting…");
+    });
 
     socket.on("game:countdown", ({ remaining }) => {
       if (remaining > 0) {

@@ -3,6 +3,7 @@ const http = require("http");
 const path = require("path");
 const { Server } = require("socket.io");
 const { v4: uuidv4 } = require("uuid");
+const Redis = require("ioredis");
 
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || "development";
@@ -70,6 +71,31 @@ if (!MW_API_KEY) {
 const wordCache = new Map();
 const CACHE_MAX_SIZE = 2000;
 
+// ── Persistence (Redis snapshot/restore) ─────────────────────────────────────
+// The in-memory `rooms` Map is the runtime source of truth. Redis is a side
+// channel: we snapshot serialized room state on an interval (and on SIGTERM),
+// and restore it on boot, so active games survive a Railway redeploy/restart.
+// Entirely optional — if REDIS_URL is unset, the server runs in-memory exactly
+// as before (and every Redis call is a no-op). Failures never break gameplay.
+const REDIS_URL = process.env.REDIS_URL;
+const REDIS_STATE_KEY = "wordwars:state";
+const SNAPSHOT_INTERVAL_MS = 5000;
+let redis = null;
+if (REDIS_URL) {
+  redis = new Redis(REDIS_URL, {
+    maxRetriesPerRequest: 2,
+    retryStrategy: (times) => Math.min(times * 200, 2000)
+  });
+  // Handle errors so a Redis outage logs but never crashes the game server.
+  redis.on("error", (err) => logEvent("error", "redis_error", { message: err && err.message }));
+  redis.on("connect", () => logEvent("info", "redis_connected", {}));
+  logEvent("info", "persistence_enabled", { store: "redis" });
+} else {
+  logEvent("warn", "persistence_disabled", {
+    message: "REDIS_URL not set — room state is in-memory only and will not survive a restart/redeploy."
+  });
+}
+
 // CORS origin policy. In production an explicit ALLOWED_ORIGIN is required; if it
 // is missing we fall back to the Railway-provided public domain rather than a
 // wildcard, and deny cross-origin entirely if neither is set. In development we
@@ -99,9 +125,10 @@ const io = new Server(server, {
   transports: ["websocket", "polling"],
   allowEIO3: true
 });
-// Note: room state is in-process only. A Railway redeploy during an active game
-// will clear all rooms. Players will need to start a new game. (Reconnects within
-// a live process are handled via the room:rejoin flow, which re-emits room state.)
+// Runtime source of truth for all room state. Snapshotted to Redis (when
+// REDIS_URL is set) so it survives a redeploy/restart; without Redis it is
+// in-process only and a redeploy clears it. Reconnects within a live process —
+// and after a restore — are handled via the room:rejoin flow.
 const rooms = new Map();
 
 app.use(express.static(__dirname));
@@ -733,7 +760,7 @@ function removeExpiredRooms() {
   }
 }
 
-setInterval(removeExpiredRooms, 60 * 1000);
+setInterval(removeExpiredRooms, 60 * 1000).unref();
 
 // Cleanly remove a socket's player from whatever room it's currently in.
 // Shared by room:leave and by room:join/room:create, so a user is never left
@@ -797,6 +824,118 @@ function detachFromRoom(socket) {
     finishRound(room, "all-solved");
   }
   return true;
+}
+
+// ── Snapshot / restore ───────────────────────────────────────────────────────
+// A room carries live, non-serializable handles (timers) and a Map of players.
+// serializeRoom strips the timers and flattens the Map; deserializeRoom rebuilds
+// the Map and nulls the timers. Players are marked disconnected on restore — the
+// sockets from the previous process are gone; clients re-attach via room:rejoin.
+function serializeRoom(room) {
+  return {
+    code: room.code,
+    hostId: room.hostId,
+    createdAt: room.createdAt,
+    lastActive: room.lastActive,
+    status: room.status,
+    currentRound: room.currentRound,
+    roundStartedAt: room.roundStartedAt,
+    playerOrder: room.playerOrder || [],
+    chooserIndex: room.chooserIndex,
+    currentChooserId: room.currentChooserId,
+    waitingForWord: room.waitingForWord,
+    config: room.config,
+    currentRoundConfig: room.currentRoundConfig,
+    players: Array.from(room.players.values()).map((p) => ({
+      id: p.id, sessionId: p.sessionId, name: p.name, connected: p.connected, active: p.active,
+      isHost: p.isHost, cumulativeScore: p.cumulativeScore, roundScore: p.roundScore,
+      solved: p.solved, solvedAt: p.solvedAt, guesses: p.guesses, breakdown: p.breakdown,
+      usedHint: p.usedHint, hintPenalty: p.hintPenalty
+    }))
+  };
+}
+
+function deserializeRoom(obj) {
+  const room = {
+    code: obj.code,
+    hostId: obj.hostId,
+    createdAt: obj.createdAt,
+    lastActive: obj.lastActive,
+    status: obj.status,
+    currentRound: obj.currentRound,
+    roundStartedAt: obj.roundStartedAt,
+    timerInterval: null,
+    countdownInterval: null,
+    hostGraceTimer: null,
+    players: new Map(),
+    playerOrder: obj.playerOrder || [],
+    chooserIndex: obj.chooserIndex || 0,
+    currentChooserId: obj.currentChooserId || null,
+    waitingForWord: Boolean(obj.waitingForWord),
+    config: obj.config || { roundTime: 180, totalRounds: 0 },
+    currentRoundConfig: obj.currentRoundConfig || { word: null, hint: "" }
+  };
+  for (const p of (obj.players || [])) {
+    p.connected = false;   // previous-process sockets are dead
+    p.guessing = false;    // clear any in-flight guard
+    room.players.set(p.id, p);
+  }
+  return room;
+}
+
+// Re-establish the live timers/transitions a restored room needs so a round in
+// progress keeps moving even though setInterval/setTimeout handles didn't survive.
+function resumeRoomAfterRestore(room) {
+  if (room.status === "playing") {
+    const elapsed = Math.max(0, nowSeconds() - room.roundStartedAt);
+    if (elapsed >= room.config.roundTime) {
+      finishRound(room, "timer");          // round already expired during downtime
+    } else {
+      startRoundTimer(room);               // resume the authoritative countdown
+    }
+  } else if (room.status === "countdown") {
+    room.status = "lobby";                  // brief pre-round countdown can't resume; host re-starts
+  } else if (room.status === "round-ended") {
+    // The auto-advance timer was lost — re-arm it so the session doesn't stall.
+    if (room.currentRound >= room.config.totalRounds) {
+      room.status = "session-ended";
+    } else {
+      setTimeout(() => {
+        if (rooms.has(room.code) && room.status === "round-ended") startRoundRobin(room);
+      }, ROUND_REVEAL_DELAY);
+    }
+  }
+  // "lobby" / "choosing" / "session-ended" need no re-arming: choosing resumes when
+  // the chooser submits a word; the others are static until a player/host acts.
+}
+
+async function persistState() {
+  if (!redis) return;
+  try {
+    const data = JSON.stringify(Array.from(rooms.values()).map(serializeRoom));
+    await redis.set(REDIS_STATE_KEY, data, "EX", Math.ceil(ROOM_EXPIRY_MS / 1000));
+  } catch (err) {
+    logEvent("error", "persist_failed", { message: err && err.message });
+  }
+}
+
+async function restoreRooms() {
+  if (!redis) return;
+  try {
+    const raw = await redis.get(REDIS_STATE_KEY);
+    if (!raw) return;
+    let restored = 0;
+    for (const obj of JSON.parse(raw)) {
+      if (!obj || !obj.code) continue;
+      const room = deserializeRoom(obj);
+      rooms.set(room.code, room);
+      resumeRoomAfterRestore(room);
+      restored += 1;
+    }
+    logEvent("info", "rooms_restored", { count: restored });
+  } catch (err) {
+    logEvent("error", "restore_failed", { message: err && err.message });
+  }
 }
 
 io.on("connection", (socket) => {
@@ -1200,14 +1339,43 @@ io.on("connection", (socket) => {
   });
 });
 
-process.on("SIGTERM", () => {
-  console.log("SIGTERM received — shutting down gracefully");
-  server.close(() => {
-    console.log("Server closed");
-    process.exit(0);
-  });
-});
+// Periodic snapshot so a hard crash loses at most a few seconds of progress.
+// Only runs when persistence is enabled; unref'd so it never holds the process up.
+if (redis) {
+  setInterval(() => { persistState(); }, SNAPSHOT_INTERVAL_MS).unref();
+}
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`WordWars server running at http://localhost:${PORT}`);
-});
+// Graceful drain. Railway sends SIGTERM before replacing the container. We take a
+// final snapshot (so the new container can restore the games) and tell connected
+// players an update is rolling — they're reconnected automatically once it's up.
+let shuttingDown = false;
+async function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logEvent("info", "shutdown", { signal });
+  try { io.emit("server:restarting", { message: "Server is updating — you'll be reconnected automatically." }); } catch (_) {}
+  await persistState();
+  server.close(() => { logEvent("info", "server_closed", {}); process.exit(0); });
+  // Force exit if open sockets keep the server from closing in time.
+  setTimeout(() => process.exit(0), 3000).unref();
+}
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
+// Restore any persisted games before accepting traffic, then start listening.
+// Guarded so the module can be required in tests without binding a port.
+if (require.main === module) {
+  (async () => {
+    await restoreRooms();
+    server.listen(PORT, "0.0.0.0", () => {
+      logEvent("info", "server_listening", { port: PORT, env: NODE_ENV, persistence: redis ? "redis" : "memory" });
+    });
+  })();
+}
+
+// Test surface: lets a test require this module (without booting) and exercise the
+// persistence layer with an injected client. Not used by the running server.
+module.exports = {
+  rooms, serializeRoom, deserializeRoom, persistState, restoreRooms,
+  setRedisClient: (client) => { redis = client; }
+};
