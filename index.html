@@ -2665,14 +2665,9 @@
       "You gave them a real fight."
     ];
 
-    // How long the appreciation card holds before it auto-reveals the leaderboard
-    // underneath. Players can tap to dismiss sooner; either way the round
-    // leaderboard becomes visible well before the next round starts.
-    const APPRECIATION_HOLD_MS = 3500;
-
     // Round-end appreciation shown to EVERY player — solver, non-solver, and the
     // word picker — revealing the word (and its meaning) with a tailored pun.
-    // Auto-dismisses after a few seconds so the leaderboard is always seen.
+    // Persistent: stays on screen until the player taps to dismiss it.
     function showRoundAppreciation(payload, then) {
       const overlay = $("roundAppreciation");
       const board = payload.leaderboard || [];
@@ -2714,19 +2709,17 @@
 
       overlay.classList.remove("hidden");
       let gone = false;
-      let autoTimer = null;
       const dismiss = () => {
         if (gone) return;
         gone = true;
-        if (autoTimer) clearTimeout(autoTimer);
         overlay.removeEventListener("click", dismiss);
         overlay.classList.add("hidden");
         if (then) then();
       };
+      // Persistent until the player taps — no auto-dismiss. The chosen word (and
+      // its meaning) stays on screen as long as the player wants to study it; the
+      // leaderboard underneath is revealed only when they tap to continue.
       overlay.addEventListener("click", dismiss);
-      // Auto-reveal the leaderboard underneath after a short hold so players who
-      // don't tap still get to study the standings before the next round begins.
-      autoTimer = setTimeout(dismiss, APPRECIATION_HOLD_MS);
     }
 
     function escapeHtml(value) {
