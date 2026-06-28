@@ -1712,6 +1712,13 @@
     .progress-attempts { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
     .attempt-dots { letter-spacing: 2px; color: var(--accent-2); font-size: 0.7rem; }
     .progress-count { font-size: 0.78rem; color: var(--muted); font-weight: 700; }
+    /* Right-side cluster: hint badge + solve/attempt status, kept on one line. */
+    .progress-right { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+    .progress-hint {
+      font-size: 0.72rem; font-weight: 800; color: var(--accent-2, #b58a00);
+      background: var(--panel-2, rgba(181,138,0,0.12));
+      border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px;
+    }
     /* Word-picker spectator layout: drop the board/keyboard grid, center the live
        board so the screen reads as a deliberate "you're watching" view. */
     #gameScreen .game-main.spectating {
@@ -3386,6 +3393,7 @@
     function renderRoundEnd(payload) {
       const reasonMap = {
         "all-solved":   "Everyone solved it!",
+        "all-finished": "All guesses are in!",
         "timer":        "Time's up!",
         "host":         "Round ended by host.",
         "chooser-left": "The word picker left — round ended early.",
@@ -3713,9 +3721,14 @@
         const status = p.solved
           ? `<span class="progress-solved">✓ ${p.score} pts</span>`
           : `<span class="progress-attempts">${attemptDots(p.guessesUsed, max)} <span class="progress-count">${p.guessesUsed}/${max}</span></span>`;
+        // Hint indicator — shown to the word-picker and anyone already done, so
+        // they can see who took the hint. The hint text itself is never exposed.
+        const hintBadge = p.usedHint
+          ? `<span class="progress-hint" title="${me ? "You used the hint" : "Used the hint"}">💡 hint</span>`
+          : "";
         return `<div class="progress-row${me ? " progress-row--me" : ""}">
           <span class="row-av">${av}<span class="progress-name">${escapeHtml(p.name)}</span></span>
-          ${status}
+          <span class="progress-right">${hintBadge}${status}</span>
         </div>`;
       }).join("");
       ["roundProgress", "liveLeaderboard", "solvedLeaderboard"].forEach((id) => {

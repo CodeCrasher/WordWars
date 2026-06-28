@@ -508,7 +508,11 @@ function getRoundProgress(room) {
       solved: p.solved,
       guessesUsed: p.guesses.length,
       score: p.roundScore,
-      time: p.solvedAt
+      time: p.solvedAt,
+      // Who revealed the chooser's hint — visible to the word-picker and to any
+      // player already done. Just the boolean; the hint TEXT is never leaked
+      // here (only the player who paid for it ever receives the words).
+      usedHint: p.usedHint
     }))
     .sort((a, b) => {
       if (a.isChooser !== b.isChooser) return a.isChooser ? 1 : -1; // picker last
@@ -609,11 +613,32 @@ function finishRound(room, reason = "complete") {
   }
 }
 
-function allActivePlayersSolved(room) {
-  const activePlayers = Array.from(room.players.values()).filter(
+function activeGuessers(room) {
+  return Array.from(room.players.values()).filter(
     p => p.active && p.id !== room.currentChooserId
   );
+}
+
+function allActivePlayersSolved(room) {
+  const activePlayers = activeGuessers(room);
   return activePlayers.length > 0 && activePlayers.every(p => p.solved);
+}
+
+// A guesser is "finished" once they've either solved the word OR used up all of
+// their guesses. The round should end as soon as EVERY guesser is finished — we
+// don't keep the survivors (or the picker) waiting on the round timer just
+// because someone failed to solve. With a single guesser this means the round
+// ends the instant they solve or exhaust their attempts.
+function allActivePlayersFinished(room) {
+  const activePlayers = activeGuessers(room);
+  return activePlayers.length > 0 &&
+    activePlayers.every(p => p.solved || p.guesses.length >= MAX_GUESSES);
+}
+
+// Reason for an all-finished round: "all-solved" only when everyone actually
+// cracked it, otherwise the more accurate "all-finished".
+function finishedReason(room) {
+  return allActivePlayersSolved(room) ? "all-solved" : "all-finished";
 }
 
 // The round timer is SERVER-AUTHORITATIVE. This interval broadcasts the canonical
@@ -820,8 +845,8 @@ function detachFromRoom(socket) {
   if (wasChooser && room.status === "playing") {
     finishRound(room, "chooser-left");
   }
-  if (room.status === "playing" && allActivePlayersSolved(room)) {
-    finishRound(room, "all-solved");
+  if (room.status === "playing" && allActivePlayersFinished(room)) {
+    finishRound(room, finishedReason(room));
   }
   return true;
 }
@@ -1226,8 +1251,8 @@ io.on("connection", (socket) => {
         maxGuesses: MAX_GUESSES
       });
 
-      if (allActivePlayersSolved(room)) {
-        finishRound(room, "all-solved");
+      if (allActivePlayersFinished(room)) {
+        finishRound(room, finishedReason(room));
       }
     } finally {
       player.guessing = false;
@@ -1256,8 +1281,14 @@ io.on("connection", (socket) => {
       HINT_PENALTY_BASE - HINT_PENALTY_STEP * player.guesses.length
     );
     player.usedHint = true;
+    touchRoom(room);
 
     callback?.({ ok: true, hint: room.currentRoundConfig.hint });
+
+    // Let the word-picker (and anyone already done) see who took the hint right
+    // away, instead of waiting for this player's next guess to refresh the feed.
+    // The hint TEXT never rides along — getRoundProgress only carries the flag.
+    io.to(room.code).emit("game:guessProgress", { progress: getRoundProgress(room) });
   });
 
   // Host force-ends the active round.
@@ -1332,8 +1363,8 @@ io.on("connection", (socket) => {
       emitPlayers(room, "room:playerLeft");
       // Only one player left in a live game → close it and show the leaderboard.
       if (endSessionIfAbandoned(room)) return;
-      if (room.status === "playing" && allActivePlayersSolved(room)) {
-        finishRound(room, "all-solved");
+      if (room.status === "playing" && allActivePlayersFinished(room)) {
+        finishRound(room, finishedReason(room));
       }
     }
   });
