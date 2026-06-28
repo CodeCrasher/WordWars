@@ -851,6 +851,49 @@ function detachFromRoom(socket) {
   return true;
 }
 
+// Hand a disconnected player's slot to a new socket — restoring their score,
+// board, host authority, and chooser turn. Shared by room:rejoin (matched by
+// session token) and room:join (a returning player matched by name). Returns the
+// callback reply, including a roundState snapshot when a round is in progress.
+function reclaimPlayerSlot(room, existing, socket) {
+  const wasHost = existing.id === room.hostId;
+  const wasChooser = existing.id === room.currentChooserId;
+  const oldId = existing.id;
+
+  // Swap old socket ID → new socket ID, reactivating the slot.
+  room.players.delete(oldId);
+  existing.id = socket.id;
+  existing.connected = true;
+  existing.active = true;
+  room.players.set(socket.id, existing);
+
+  if (wasHost) {
+    room.hostId = socket.id;
+    // Host made it back within the grace window — cancel the end-game timer.
+    if (room.hostGraceTimer) { clearTimeout(room.hostGraceTimer); room.hostGraceTimer = null; }
+  }
+  if (wasChooser) room.currentChooserId = socket.id;
+  room.playerOrder = room.playerOrder.map(id => id === oldId ? socket.id : id);
+
+  // Leave any other room this socket was bound to before binding to this one.
+  if (socket.data.roomCode && socket.data.roomCode !== room.code) detachFromRoom(socket);
+  socket.data.roomCode = room.code;
+  socket.join(room.code);
+  touchRoom(room);
+
+  emitPlayers(room, "room:playerJoined");
+  const reply = {
+    ok: true,
+    isHost: wasHost,
+    room: getRoomSummary(room),
+    playerId: socket.id,
+    sessionId: existing.sessionId
+  };
+  // Mid-round: hand back enough to rebuild this player's board on a cold load.
+  if (room.status === "playing") reply.roundState = getActiveRoundSnapshot(room, existing);
+  return reply;
+}
+
 // ── Snapshot / restore ───────────────────────────────────────────────────────
 // A room carries live, non-serializable handles (timers) and a Map of players.
 // serializeRoom strips the timers and flattens the Map; deserializeRoom rebuilds
@@ -1042,7 +1085,26 @@ io.on("connection", (socket) => {
 
     if (!room) return callback?.({ ok: false, error: "Room not found." });
     if (!isDisplayName(name)) return callback?.({ ok: false, error: "Name must be 3-16 alphanumeric characters." });
-    if (room.status !== "lobby") return callback?.({ ok: false, error: "This game is already in progress." });
+
+    // Mid-game: only RETURNING players may re-enter — reclaim a disconnected slot
+    // matched by name, preserving their score, board, and chooser turn. New names
+    // are turned away until the next game; an in-use (still-connected) name can't
+    // be hijacked. The room key alone gets a returning player back in at any time.
+    if (room.status !== "lobby") {
+      if (room.status === "session-ended") {
+        return callback?.({ ok: false, error: "That game has already ended." });
+      }
+      const sameName = Array.from(room.players.values())
+        .find((p) => p.name.toLowerCase() === name.toLowerCase());
+      if (sameName && !sameName.connected) {
+        return callback?.(reclaimPlayerSlot(room, sameName, socket));
+      }
+      if (sameName) {
+        return callback?.({ ok: false, error: "That name is already active in the game. If it's you, rejoin from the device you were playing on." });
+      }
+      return callback?.({ ok: false, error: "This game is already in progress — you can only rejoin if you were already in it. Use the exact name you played with." });
+    }
+
     if (room.players.size >= MAX_PLAYERS) return callback?.({ ok: false, error: "Room is full." });
     if (Array.from(room.players.values()).some((player) => player.id !== socket.id && player.name.toLowerCase() === name.toLowerCase())) {
       return callback?.({ ok: false, error: "That name is already taken in this room." });
@@ -1072,34 +1134,7 @@ io.on("connection", (socket) => {
     const existing = Array.from(room.players.values()).find((p) => p.sessionId === sessionId);
     if (!existing) return callback?.({ ok: false, error: "Session not recognised." });
 
-    const wasHost = existing.id === room.hostId;
-    const wasChooser = existing.id === room.currentChooserId;
-
-    // Swap old socket ID → new socket ID
-    room.players.delete(existing.id);
-    const oldId = existing.id;
-    existing.id = socket.id;
-    existing.connected = true;
-    existing.active = true;
-    room.players.set(socket.id, existing);
-
-    if (wasHost) {
-      room.hostId = socket.id;
-      // Host made it back within the grace window — cancel the end-game timer.
-      if (room.hostGraceTimer) { clearTimeout(room.hostGraceTimer); room.hostGraceTimer = null; }
-    }
-    if (wasChooser) room.currentChooserId = socket.id;
-    room.playerOrder = room.playerOrder.map(id => id === oldId ? socket.id : id);
-
-    socket.data.roomCode = room.code;
-    socket.join(room.code);
-    touchRoom(room);
-
-    emitPlayers(room, "room:playerJoined");
-    const reply = { ok: true, isHost: wasHost, room: getRoomSummary(room) };
-    // Mid-round: hand back enough to rebuild this player's board on a cold load.
-    if (room.status === "playing") reply.roundState = getActiveRoundSnapshot(room, existing);
-    callback?.(reply);
+    callback?.(reclaimPlayerSlot(room, existing, socket));
   });
 
   // Host starts the session. Total rounds = 2 x active player count.

@@ -229,3 +229,88 @@ test("hint usage is visible to the word-picker via the progress feed (text never
   host.close();
   guesser.close();
 });
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// A returning player can re-enter a game IN PROGRESS using only the room key +
+// their name (no session token), reclaiming their disconnected slot — board,
+// score, and chooser turn intact. Brand-new names are turned away mid-game.
+test("a returning player rejoins a live game by name and gets their board back", async () => {
+  const host = new IOClient(PORT);
+  const guesser = new IOClient(PORT);
+  const other = new IOClient(PORT); // 3rd player keeps the game alive after a drop
+  await host.connect();
+  await guesser.connect();
+  await other.connect();
+
+  const created = await host.emit("room:create", { pin: ADMIN_PIN, name: "Hostfour", roundTime: 60 });
+  assert.ok(created.ok, created.error);
+  const code = created.room.code;
+  const joined = await guesser.emit("room:join", { code, name: "Returner" });
+  assert.ok(joined.ok, joined.error);
+  const otherJoin = await other.emit("room:join", { code, name: "Stayer" });
+  assert.ok(otherJoin.ok, otherJoin.error);
+
+  const choosingP = host.once("game:choosingWord");
+  await host.emit("game:start", { roundTime: 60 });
+  await choosingP;
+  await host.emit("game:submitWord", { word: "APPLE", hint: "" });
+
+  // The guesser makes one (wrong) guess, then drops off the network entirely.
+  const g = await guesser.emit("game:guess", { guess: "BERRY" });
+  assert.ok(g.ok, g.error);
+  guesser.close();
+  await sleep(300); // let the server register the disconnect (slot kept, inactive)
+
+  // A FRESH socket — no session token — rejoins using just the room key + name.
+  const returner = new IOClient(PORT);
+  await returner.connect();
+  const back = await returner.emit("room:join", { code, name: "Returner" });
+  assert.ok(back.ok, back.error);
+  assert.ok(back.roundState, "a live round hands back a roundState snapshot");
+  assert.equal(back.roundState.guesses.length, 1, "their earlier guess is restored");
+  assert.equal(back.roundState.guesses[0].guess, "BERRY");
+  assert.equal(back.sessionId, joined.sessionId, "same player slot — session token preserved");
+
+  // A brand-new name is rejected while the game is in progress.
+  const stranger = new IOClient(PORT);
+  await stranger.connect();
+  const denied = await stranger.emit("room:join", { code, name: "Stranger" });
+  assert.equal(denied.ok, false, "new players cannot join a game in progress");
+  assert.match(denied.error, /in progress/i);
+
+  host.close();
+  other.close();
+  returner.close();
+  stranger.close();
+});
+
+// A still-CONNECTED name cannot be hijacked by someone else mid-game.
+test("an active player's name cannot be taken over mid-game", async () => {
+  const host = new IOClient(PORT);
+  const guesser = new IOClient(PORT);
+  await host.connect();
+  await guesser.connect();
+
+  const created = await host.emit("room:create", { pin: ADMIN_PIN, name: "Hostfive", roundTime: 60 });
+  assert.ok(created.ok, created.error);
+  const code = created.room.code;
+  const joined = await guesser.emit("room:join", { code, name: "Active" });
+  assert.ok(joined.ok, joined.error);
+
+  const choosingP = host.once("game:choosingWord");
+  await host.emit("game:start", { roundTime: 60 });
+  await choosingP;
+  await host.emit("game:submitWord", { word: "APPLE", hint: "" });
+
+  // "Active" is still connected — an impostor with the same name is refused.
+  const impostor = new IOClient(PORT);
+  await impostor.connect();
+  const denied = await impostor.emit("room:join", { code, name: "Active" });
+  assert.equal(denied.ok, false, "cannot reclaim a slot that's still online");
+  assert.match(denied.error, /already active/i);
+
+  host.close();
+  guesser.close();
+  impostor.close();
+});

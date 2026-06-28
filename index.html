@@ -2991,8 +2991,37 @@
         code: $("joinCode").value.trim()
       }, (response) => {
         if (!response?.ok) return setError("joinError", response?.error || "Could not join room.");
-        enterRoom(response);
+        // Returning to a game already in progress (reclaimed a disconnected slot):
+        // route into the live game instead of the lobby.
+        if (response.room && response.room.status !== "lobby") {
+          enterRoomMidGame(response);
+        } else {
+          enterRoom(response);
+        }
       });
+    }
+
+    // A returning player who re-entered via the room key while a game is running.
+    // Mirrors the cold-load auto-rejoin routing: rebuild the board mid-round, or
+    // park on a holding view until the next round's events arrive.
+    function enterRoomMidGame(response) {
+      state.playerId = response.playerId || socket.id;
+      state.isHost = Boolean(response.isHost);
+      state.sessionId = response.sessionId || state.sessionId;
+      state.room = response.room;
+      saveSession(state.room?.code, state.sessionId);
+      preloadAdminConfig();
+      $("endRoundBtn").classList.toggle("hidden", !state.isHost);
+
+      if (response.room.status === "playing" && response.roundState) {
+        restoreRoundBoard(response.roundState);
+      } else {
+        // choosing / countdown / round-ended — the next round's events
+        // (game:choosingWord / game:started) will drive the UI from here.
+        renderLobby();
+        showScreen("lobby");
+        showToast("You're back in — you'll re-enter on the next round.");
+      }
     }
 
     function enterRoom(response) {
