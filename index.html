@@ -2342,6 +2342,7 @@
               <h2>You solved it! 🎉</h2>
               <p class="subtitle" id="solvedSubtitle">Waiting for the round to finish…</p>
             </div>
+            <div class="timer" id="solvedTimerText" title="Time left in this round">3:00</div>
           </div>
           <div class="leader-list" id="solvedLeaderboard">
             <div class="muted">No solves yet.</div>
@@ -3384,11 +3385,64 @@
       });
     }
 
+    // The round clock is SERVER-AUTHORITATIVE: every game:timerTick re-anchors the
+    // display to the server's true remaining time. BETWEEN ticks — and crucially
+    // after a backgrounded tab is throttled/frozen and stops receiving them — we
+    // recompute the display from a monotonic clock (performance.now), so the timer
+    // always reflects REAL elapsed wall-clock time. A player who tabs away to
+    // message someone doesn't get a paused clock: they return to the correctly
+    // decremented time, and the round ends for everyone at the same moment.
+    let timerLoop = null;
+
     function updateTimer(remaining) {
+      // Anchor the server's remaining (seconds) to this monotonic instant.
       state.game.remaining = remaining;
-      $("timerText").textContent = formatTime(remaining);
-      $("timerText").classList.toggle("danger", remaining <= 30);
+      state.game.timerAnchorRemaining = remaining;
+      state.game.timerAnchorAt = performance.now();
+      renderTimerDisplay(remaining);
+      startTimerLoop();
     }
+
+    // Best estimate of remaining seconds RIGHT NOW, from the last server anchor
+    // plus real elapsed time — independent of whether ticks kept arriving.
+    function currentRemaining() {
+      if (typeof state.game.timerAnchorRemaining !== "number") return 0;
+      const elapsed = (performance.now() - state.game.timerAnchorAt) / 1000;
+      return Math.max(0, state.game.timerAnchorRemaining - elapsed);
+    }
+
+    // Mirror the countdown onto every screen that shows it: the live game board AND
+    // the "you solved it" waiting screen, so finished players see it tick down too.
+    function renderTimerDisplay(remaining) {
+      const text = formatTime(Math.ceil(remaining));
+      const danger = remaining <= 30;
+      ["timerText", "solvedTimerText"].forEach((id) => {
+        const el = $(id);
+        if (el) {
+          el.textContent = text;
+          el.classList.toggle("danger", danger);
+        }
+      });
+    }
+
+    function startTimerLoop() {
+      if (timerLoop) return;
+      timerLoop = setInterval(() => {
+        const r = currentRemaining();
+        renderTimerDisplay(r);
+        if (r <= 0) stopTimerLoop(); // round is over; server roundEnd will follow
+      }, 250);
+    }
+
+    function stopTimerLoop() {
+      if (timerLoop) { clearInterval(timerLoop); timerLoop = null; }
+    }
+
+    // Returning to the tab: snap the display to true elapsed time immediately,
+    // instead of waiting for the next render tick or the next server tick.
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden && timerLoop) renderTimerDisplay(currentRemaining());
+    });
 
     function renderRoundEnd(payload) {
       const reasonMap = {
@@ -3592,11 +3646,12 @@
 
     socket.on("game:timerTick", ({ remaining }) => updateTimer(remaining));
     socket.on("game:roundEnd", (payload) => {
+      stopTimerLoop();                    // round over — freeze the local clock
       $("solveOverlay").classList.add("hidden");
       renderRoundEnd(payload);            // leaderboard ready underneath
       showRoundAppreciation(payload);     // appreciation page on top for ALL users; tap → leaderboard
     });
-    socket.on("game:sessionEnd", (payload) => { clearSession(); $("solveOverlay").classList.add("hidden"); $("roundAppreciation").classList.add("hidden"); renderSessionEnd(payload); });
+    socket.on("game:sessionEnd", (payload) => { stopTimerLoop(); clearSession(); $("solveOverlay").classList.add("hidden"); $("roundAppreciation").classList.add("hidden"); renderSessionEnd(payload); });
 
     // ── Auto-rejoin after socket reconnect ───────────────────────────────────
     // socket.io fires "connect" on every (re)connection. On the first connect
@@ -3843,7 +3898,10 @@
       ["liveLeaderboard", "solvedLeaderboard", "roundLeaderboard"].forEach(id => {
         const el = $(id); if (el) el.innerHTML = "";
       });
+      stopTimerLoop();
       $("timerText").textContent = "";
+      const solvedTimer = $("solvedTimerText");
+      if (solvedTimer) { solvedTimer.textContent = ""; solvedTimer.classList.remove("danger"); }
       renderBoard();
       renderKeyboard();
     }
