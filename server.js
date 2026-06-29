@@ -1503,6 +1503,449 @@ io.on("connection", (socket) => {
   });
 });
 
+// ===== PRACTICE MODE START =====
+// Solo "Play vs Claude AI" practice mode. Fully self-contained: its own session
+// store (keyed by socket.id), its own feedback + scoring, its own Anthropic calls,
+// and its own io.on("connection") block. It does not touch any multiplayer code,
+// the `rooms` map, or the existing handlers above.
+
+const PRACTICE_MODEL = "claude-sonnet-4-6";
+const PRACTICE_MAX_ATTEMPTS = 6;
+const PRACTICE_GUESS_DEBOUNCE_MS = 300;
+const PRACTICE_NEXT_ROUND_DELAY_MS = 2600; // pause on the round-end card before the next word
+
+// Anthropic client. Loaded defensively: a missing package or unset key must never
+// crash the server — practice simply falls back to the hardcoded word lists.
+let anthropic = null;
+try {
+  if (process.env.ANTHROPIC_API_KEY) {
+    const AnthropicSDK = require("@anthropic-ai/sdk");
+    const Anthropic = AnthropicSDK.default || AnthropicSDK;
+    anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    logEvent("info", "practice_anthropic_ready", {});
+  } else {
+    logEvent("warn", "practice_anthropic_disabled", {
+      message: "ANTHROPIC_API_KEY not set — Play vs AI uses the fallback word lists."
+    });
+  }
+} catch (err) {
+  logEvent("error", "practice_anthropic_load_failed", { message: err && err.message });
+}
+
+// Fallback words (≥20 per tier) with crossword-style hints — used whenever the
+// Anthropic call fails or no key is configured.
+const FALLBACK_WORDS = {
+  easy: [
+    { word: "CHAIR", hint: "You pull this up to a table" },
+    { word: "BREAD", hint: "A baker pulls it from the oven each morning" },
+    { word: "CLOCK", hint: "Its hands never hold anything" },
+    { word: "RIVER", hint: "It runs but never walks" },
+    { word: "HOUSE", hint: "Four walls you come home to" },
+    { word: "TRAIN", hint: "It runs on rails between stations" },
+    { word: "LIGHT", hint: "A switch on the wall summons it" },
+    { word: "MUSIC", hint: "Headphones deliver it to your ears" },
+    { word: "PLANT", hint: "It drinks sunlight through green leaves" },
+    { word: "BEACH", hint: "Waves meet sand here" },
+    { word: "CLOUD", hint: "It drifts overhead and may bring rain" },
+    { word: "SMILE", hint: "It spreads across a happy face" },
+    { word: "WATER", hint: "Fish breathe in it" },
+    { word: "BRAVE", hint: "How a hero faces danger" },
+    { word: "HORSE", hint: "A cowboy's four-legged ride" },
+    { word: "PHONE", hint: "It rings in your pocket" },
+    { word: "STORM", hint: "Thunder announces its arrival" },
+    { word: "MOON", hint: "It lights the sky after sunset" },
+    { word: "BOOK", hint: "You turn its pages one by one" },
+    { word: "TREE", hint: "Squirrels climb it; birds nest in it" }
+  ],
+  medium: [
+    { word: "FLAIR", hint: "A natural, stylish talent" },
+    { word: "TROVE", hint: "A hidden hoard of treasure" },
+    { word: "SHRUB", hint: "A bush shorter than a tree" },
+    { word: "PRISM", hint: "It splits light into a rainbow" },
+    { word: "EMBER", hint: "A glowing remnant of a dying fire" },
+    { word: "QUILT", hint: "Stitched squares keep you warm at night" },
+    { word: "GLOBE", hint: "A desktop model of the world" },
+    { word: "MARSH", hint: "Soggy ground where reeds grow" },
+    { word: "VAULT", hint: "A bank keeps riches behind its heavy door" },
+    { word: "THORN", hint: "A rose defends itself with this" },
+    { word: "PLUME", hint: "A feather rising in smoke or on a hat" },
+    { word: "GRAVEL", hint: "Crunchy stones on a country driveway" },
+    { word: "FROST", hint: "It etches patterns on winter windows" },
+    { word: "WAGER", hint: "Money placed on an outcome" },
+    { word: "NUDGE", hint: "A gentle push to get someone moving" },
+    { word: "CANYON", hint: "A deep gorge carved by a river" },
+    { word: "HARBOR", hint: "Where ships rest from the open sea" },
+    { word: "MEADOW", hint: "An open field of wildflowers and grass" },
+    { word: "BRISK", hint: "A quick, lively pace on a cold walk" },
+    { word: "CRISP", hint: "How fresh autumn air or a good chip feels" }
+  ],
+  hard: [
+    { word: "CIPHER", hint: "A secret code waiting to be cracked" },
+    { word: "ZENITH", hint: "The highest point of the sky or of success" },
+    { word: "WALRUS", hint: "A tusked giant lounging on Arctic ice" },
+    { word: "QUIVER", hint: "It trembles, or holds an archer's arrows" },
+    { word: "GAMBIT", hint: "An opening sacrifice in chess" },
+    { word: "MIRAGE", hint: "A thirsty traveler's deceptive vision" },
+    { word: "NEBULA", hint: "A glowing cloud where stars are born" },
+    { word: "PARADOX", hint: "A statement that contradicts itself" },
+    { word: "LACQUER", hint: "A glossy coat brushed onto wood" },
+    { word: "OBELISK", hint: "A tall stone monument tapering to a point" },
+    { word: "SPHINX", hint: "A riddling guardian of ancient Egypt" },
+    { word: "TEMPEST", hint: "A violent storm Shakespeare named a play for" },
+    { word: "JUNIPER", hint: "A berry that flavors gin" },
+    { word: "QUARTZ", hint: "A hard crystal ticking inside many watches" },
+    { word: "VERTIGO", hint: "A dizzying fear felt at great heights" },
+    { word: "ECLIPSE", hint: "When one heavenly body hides another" },
+    { word: "LANTERN", hint: "A portable flame that lights the path" },
+    { word: "MAESTRO", hint: "The baton-waver before an orchestra" },
+    { word: "PHANTOM", hint: "A ghost said to haunt an opera" },
+    { word: "TRELLIS", hint: "A lattice that climbing roses scale" }
+  ]
+};
+
+const PRACTICE_LENGTH_RANGE = { easy: [4, 5], medium: [5, 6], hard: [6, 7] };
+
+const practiceSessions = new Map();
+
+function nowMs() { return Date.now(); }
+
+// Variable-length Wordle feedback returning the spec's colour names.
+function makePracticeFeedback(guess, answer) {
+  const n = answer.length;
+  const colours = Array(n).fill("absent");
+  const counts = {};
+  for (let i = 0; i < n; i += 1) {
+    if (guess[i] === answer[i]) colours[i] = "correct";
+    else counts[answer[i]] = (counts[answer[i]] || 0) + 1;
+  }
+  for (let i = 0; i < n; i += 1) {
+    if (colours[i] === "correct") continue;
+    if (counts[guess[i]] > 0) { colours[i] = "present"; counts[guess[i]] -= 1; }
+  }
+  return colours;
+}
+
+function calcPracticeScore({ outcome, attemptsUsed, timerSeconds, timeLeft }) {
+  if (outcome !== "win") return 0;
+  const base = 100;
+  const guessBonus = (PRACTICE_MAX_ATTEMPTS - attemptsUsed) * 10;
+  const timerBonus = timerSeconds > 0 ? Math.floor(timeLeft * 0.5) : 0;
+  return base + guessBonus + timerBonus;
+}
+
+function extractJson(text) {
+  if (!text) return null;
+  // Strip ```json fences if present, then grab the outermost JSON object/array.
+  const cleaned = String(text).replace(/```(?:json)?/gi, "").trim();
+  const match = cleaned.match(/[[{][\s\S]*[\]}]/);
+  try { return JSON.parse(match ? match[0] : cleaned); } catch { return null; }
+}
+
+function pickFallbackWord(difficulty, usedWords) {
+  const list = FALLBACK_WORDS[difficulty] || FALLBACK_WORDS.easy;
+  const used = new Set((usedWords || []).map((w) => String(w).toUpperCase()));
+  const fresh = list.filter((e) => !used.has(e.word));
+  const pool = fresh.length ? fresh : list;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+const WORD_SYSTEM_PROMPT = [
+  "You are a word selector for a Wordle-style word game. Your job is to choose a single English word and write a contextual hint for it.",
+  "Rules:",
+  "- Return ONLY valid JSON matching this schema: { \"word\": string, \"hint\": string }",
+  "- No markdown, no explanation, no extra keys",
+  "- The word must be a real, standard English dictionary word",
+  "- The hint must be a single sentence of 15 words or fewer",
+  "- The hint must NOT contain the word, its root, or any direct synonym",
+  "- The hint should read like a crossword clue — evocative, not definitional"
+].join("\n");
+
+function wordUserPrompt(difficulty, usedWords) {
+  const used = (usedWords && usedWords.length) ? usedWords.join(", ") : "none";
+  return [
+    `Select a ${difficulty} difficulty word.`,
+    "Difficulty guidelines:",
+    "- easy: 4–5 letters, high-frequency common English nouns or verbs (e.g. CHAIR, BRAVE)",
+    "- medium: 5–6 letters, moderate frequency (e.g. FLAIR, TROVE, SHRUB)",
+    "- hard: 6–7 letters, uncommon or multi-syllabic (e.g. CIPHER, ZENITH, WALRUS)",
+    `Words already used this session (do not repeat): ${used}`,
+    "Return JSON only."
+  ].join("\n");
+}
+
+// Pick the next word+hint. Tries Claude (temperature 0.8 for variety); on any
+// failure, logs and falls back to the hardcoded list so the session never breaks.
+async function generateWord(difficulty, usedWords) {
+  const [min, max] = PRACTICE_LENGTH_RANGE[difficulty] || PRACTICE_LENGTH_RANGE.easy;
+  if (anthropic) {
+    try {
+      const msg = await anthropic.messages.create({
+        model: PRACTICE_MODEL,
+        max_tokens: 256,
+        temperature: 0.8,
+        system: WORD_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: wordUserPrompt(difficulty, usedWords) }]
+      });
+      const text = (msg.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+      const parsed = extractJson(text);
+      const word = parsed && normalizeWord(parsed.word);
+      const hint = parsed && String(parsed.hint || "").trim();
+      const used = new Set((usedWords || []).map((w) => String(w).toUpperCase()));
+      const re = new RegExp(`^[A-Z]{${min},${max}}$`);
+      if (word && hint && re.test(word) && !used.has(word) &&
+          !hint.toUpperCase().includes(word)) {
+        return { word, hint, source: "ai" };
+      }
+      logEvent("warn", "practice_word_rejected", { difficulty, word: word || null });
+    } catch (err) {
+      logEvent("error", "practice_word_gen_failed", { message: err && err.message });
+    }
+  }
+  return { ...pickFallbackWord(difficulty, usedWords), source: "fallback" };
+}
+
+const RECAP_SYSTEM_PROMPT = [
+  "You are a friendly but honest word game coach giving a player feedback on their practice session. Be concise, specific, and encouraging without being sycophantic.",
+  "Return ONLY valid JSON matching this schema:",
+  "{",
+  "  \"recap\": string[],   // one string per round, max 20 words each",
+  "  \"grade\": string      // e.g. \"A\", \"B+\", \"C\", \"Needs practice\" — one short string",
+  "}",
+  "No markdown, no explanation, no extra keys."
+].join("\n");
+
+function recapUserPrompt(difficulty, rounds) {
+  const lines = rounds.map((r, i) =>
+    `Round ${i + 1}: word="${r.word}", outcome="${r.outcome}", attempts=${r.attemptsUsed}/6, time=${r.timeTaken}s`
+  ).join("\n");
+  return [
+    `The player completed a ${difficulty} difficulty session of ${rounds.length} rounds.`,
+    "Round results:",
+    lines,
+    "Write one coaching note per round (reference the specific word) and assign an overall grade."
+  ].join("\n");
+}
+
+function fallbackRecap(rounds) {
+  const recap = rounds.map((r) => {
+    if (r.outcome === "win") return `Nice work cracking ${r.word} in ${r.attemptsUsed} guess${r.attemptsUsed === 1 ? "" : "es"}.`;
+    if (r.outcome === "timeout") return `Time ran out on ${r.word} — pace yourself a little faster next time.`;
+    return `${r.word} got away this round — review it and you'll spot it next time.`;
+  });
+  const wins = rounds.filter((r) => r.outcome === "win").length;
+  const ratio = rounds.length ? wins / rounds.length : 0;
+  const grade = ratio >= 0.9 ? "A" : ratio >= 0.7 ? "B" : ratio >= 0.5 ? "C" : ratio > 0 ? "D" : "Needs practice";
+  return { recap, grade };
+}
+
+// One Claude call at the end for personalised commentary; falls back gracefully.
+async function generateRecap(difficulty, rounds) {
+  if (anthropic) {
+    try {
+      const msg = await anthropic.messages.create({
+        model: PRACTICE_MODEL,
+        max_tokens: 512,
+        temperature: 0.5,
+        system: RECAP_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: recapUserPrompt(difficulty, rounds) }]
+      });
+      const text = (msg.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+      const parsed = extractJson(text);
+      if (parsed && Array.isArray(parsed.recap) && parsed.grade) {
+        // Pad/trim recap to one entry per round.
+        const recap = rounds.map((_, i) => String(parsed.recap[i] || "").trim() || "Solid effort this round.");
+        return { recap, grade: String(parsed.grade).trim() };
+      }
+      logEvent("warn", "practice_recap_rejected", {});
+    } catch (err) {
+      logEvent("error", "practice_recap_gen_failed", { message: err && err.message });
+    }
+  }
+  return fallbackRecap(rounds);
+}
+
+function clearPracticeTimers(session) {
+  if (!session) return;
+  if (session.roundTimer) { clearTimeout(session.roundTimer); session.roundTimer = null; }
+  if (session.advanceTimer) { clearTimeout(session.advanceTimer); session.advanceTimer = null; }
+}
+
+async function startPracticeRound(socket, session) {
+  session.round += 1;
+  session.attempts = [];
+  session.roundOver = false;
+  const { word, hint } = await generateWord(session.difficulty, session.usedWords);
+
+  // The socket may have disconnected / quit during the async word generation.
+  if (!practiceSessions.has(socket.id) || practiceSessions.get(socket.id) !== session) return;
+
+  session.currentWord = word;
+  session.currentHint = hint;
+  session.usedWords.push(word);
+  session.roundStartedAt = nowMs();
+
+  if (session.timerSeconds > 0) {
+    session.roundTimer = setTimeout(() => {
+      const live = practiceSessions.get(socket.id);
+      if (!live || live !== session || session.roundOver) return;
+      socket.emit("practice:timeout", { word: session.currentWord });
+      endPracticeRound(socket, session, "timeout");
+    }, session.timerSeconds * 1000);
+  }
+
+  socket.emit("practice:round_start", {
+    round: session.round,
+    totalRounds: session.totalRounds,
+    hint: session.currentHint,
+    timerSeconds: session.timerSeconds,
+    maxAttempts: PRACTICE_MAX_ATTEMPTS,
+    wordLength: session.currentWord.length // the length only — never the word itself
+  });
+}
+
+async function endPracticeRound(socket, session, outcome) {
+  if (session.roundOver) return; // idempotent — guard double calls (solve + timer race)
+  session.roundOver = true;
+  clearPracticeTimers(session);
+
+  const attemptsUsed = session.attempts.length;
+  const timeTaken = Math.max(0, Math.round((nowMs() - session.roundStartedAt) / 1000));
+  const timeLeft = session.timerSeconds > 0 ? Math.max(0, session.timerSeconds - timeTaken) : 0;
+  const roundScore = calcPracticeScore({ outcome, attemptsUsed, timerSeconds: session.timerSeconds, timeLeft });
+  session.totalScore += roundScore;
+
+  session.history.push({
+    word: session.currentWord,
+    hint: session.currentHint,
+    outcome,
+    attemptsUsed,
+    timeTaken,
+    roundScore
+  });
+
+  socket.emit("practice:round_end", {
+    outcome,
+    word: session.currentWord,
+    timeTaken,
+    attemptsUsed,
+    roundScore,
+    totalScore: session.totalScore
+  });
+
+  if (session.round >= session.totalRounds) {
+    const { recap, grade } = await generateRecap(session.difficulty, session.history);
+    if (!practiceSessions.has(socket.id) || practiceSessions.get(socket.id) !== session) return;
+    socket.emit("practice:game_end", {
+      rounds: session.history,
+      totalScore: session.totalScore,
+      recap,
+      grade
+    });
+  } else {
+    session.advanceTimer = setTimeout(() => {
+      const live = practiceSessions.get(socket.id);
+      if (live === session) startPracticeRound(socket, session);
+    }, PRACTICE_NEXT_ROUND_DELAY_MS);
+  }
+}
+
+io.on("connection", (socket) => {
+  socket.on("practice:start", async (payload = {}) => {
+    const difficulty = ["easy", "medium", "hard"].includes(payload.difficulty) ? payload.difficulty : null;
+    const rounds = [1, 3, 5, 10].includes(Number(payload.rounds)) ? Number(payload.rounds) : null;
+    const timer = [0, 30, 60, 90].includes(Number(payload.timer)) ? Number(payload.timer) : null;
+    if (!difficulty || rounds == null || timer == null) {
+      return socket.emit("practice:error", { message: "Invalid practice settings." });
+    }
+
+    // Reset any prior session for this socket.
+    const prior = practiceSessions.get(socket.id);
+    if (prior) clearPracticeTimers(prior);
+
+    const session = {
+      difficulty,
+      totalRounds: rounds,
+      timerSeconds: timer,
+      round: 0,
+      usedWords: [],
+      currentWord: null,
+      currentHint: null,
+      attempts: [],
+      roundStartedAt: 0,
+      roundOver: false,
+      totalScore: 0,
+      history: [],
+      lastGuessAt: 0,
+      busy: false,
+      roundTimer: null,
+      advanceTimer: null
+    };
+    practiceSessions.set(socket.id, session);
+    await startPracticeRound(socket, session);
+  });
+
+  socket.on("practice:guess", async (payload = {}) => {
+    const session = practiceSessions.get(socket.id);
+    if (!session || session.roundOver || !session.currentWord) return;
+
+    // Debounce: ignore guesses arriving within 300ms of the previous one.
+    const t = nowMs();
+    if (t - session.lastGuessAt < PRACTICE_GUESS_DEBOUNCE_MS) return;
+    session.lastGuessAt = t;
+    if (session.busy) return;
+
+    const answer = session.currentWord;
+    const guess = normalizeWord(payload.guess);
+    if (!new RegExp(`^[A-Z]{${answer.length}}$`).test(guess)) {
+      return socket.emit("practice:error", { message: `Guess must be ${answer.length} letters.` });
+    }
+
+    session.busy = true;
+    try {
+      // Dictionary check (tri-state, fail-open): only reject a definitive non-word.
+      const valid = await isValidWord(guess);
+      if (valid === false) {
+        return socket.emit("practice:error", { message: "Not a valid word. Try again." });
+      }
+      // Re-check liveness after the await.
+      const live = practiceSessions.get(socket.id);
+      if (!live || live !== session || session.roundOver) return;
+
+      const colours = makePracticeFeedback(guess, answer);
+      session.attempts.push(guess);
+      const attemptsUsed = session.attempts.length;
+      const attemptsLeft = PRACTICE_MAX_ATTEMPTS - attemptsUsed;
+      const solved = guess === answer;
+
+      socket.emit("practice:feedback", { guess, colours, attemptsLeft, attemptsUsed });
+
+      if (solved) {
+        await endPracticeRound(socket, session, "win");
+      } else if (attemptsUsed >= PRACTICE_MAX_ATTEMPTS) {
+        await endPracticeRound(socket, session, "loss");
+      }
+    } finally {
+      session.busy = false;
+    }
+  });
+
+  socket.on("practice:forfeit", () => {
+    const session = practiceSessions.get(socket.id);
+    if (session && !session.roundOver) endPracticeRound(socket, session, "loss");
+  });
+
+  socket.on("practice:quit", () => {
+    const session = practiceSessions.get(socket.id);
+    if (session) { clearPracticeTimers(session); practiceSessions.delete(socket.id); }
+  });
+
+  socket.on("disconnect", () => {
+    const session = practiceSessions.get(socket.id);
+    if (session) { clearPracticeTimers(session); practiceSessions.delete(socket.id); }
+  });
+});
+// ===== PRACTICE MODE END =====
+
 // Periodic snapshot so a hard crash loses at most a few seconds of progress.
 // Only runs when persistence is enabled; unref'd so it never holds the process up.
 if (redis) {

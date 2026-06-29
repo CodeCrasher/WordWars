@@ -2116,6 +2116,52 @@
     .feature-t { font-family: var(--font-display); font-weight: 700; font-size: 17px; color: var(--ink); margin-bottom: 5px; }
     .feature-b { font-size: 14px; line-height: 1.45; color: var(--muted); }
     @media (max-width: 720px) { .feature-grid { grid-template-columns: 1fr; } }
+
+    /* ===== PRACTICE MODE START (styles) ===== */
+    .practice-wrap { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; align-items: center; }
+    .practice-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; }
+    .practice-tag { font-weight: 800; color: var(--accent-2); }
+    .practice-round { font-weight: 700; color: var(--muted); }
+    .practice-timerbar { width: min(420px, 100%); height: 8px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
+    .practice-timerbar-fill { height: 100%; width: 100%; background: var(--accent-2); transform-origin: left center; }
+    .practice-timerbar-fill.run { animation: pracCountdown linear forwards; }
+    @keyframes pracCountdown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+    .practice-timerbar-fill.danger { background: var(--danger); }
+    .practice-hint {
+      width: min(420px, 100%); text-align: center; padding: 12px 16px; border-radius: 12px;
+      background: var(--panel-2); border: 1px dashed var(--line); color: var(--muted); font-size: 0.95rem;
+    }
+    .practice-hint em { color: var(--text); font-style: italic; }
+    .practice-scores { display: flex; gap: 22px; font-size: 0.9rem; color: var(--muted); }
+    .practice-scores strong { color: var(--text); font-size: 1.05rem; }
+    .practice-actions { display: flex; gap: 10px; }
+    /* Setup modal */
+    .practice-setup { max-width: 460px; text-align: left; }
+    .prac-field { margin: 14px 0; }
+    .prac-field > label { display: block; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 8px; }
+    .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .seg--compact { grid-template-columns: repeat(4, 1fr); }
+    .seg-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+      padding: 10px 8px; border-radius: 10px; cursor: pointer;
+      border: 1.5px solid var(--line); background: var(--panel); color: var(--text);
+      font-weight: 700; font-size: 0.95rem; transition: border-color .12s, background .12s;
+    }
+    .seg-btn small { font-weight: 500; font-size: 0.68rem; color: var(--muted); text-align: center; }
+    .seg-btn.active { border-color: var(--accent-2); background: color-mix(in srgb, var(--accent-2) 12%, transparent); }
+    .seg-btn.active small { color: var(--text); }
+    /* End screen */
+    .practice-end-panel { max-width: 620px; margin: 0 auto; }
+    .practice-grade { font-family: var(--font-display); font-weight: 900; font-size: 2rem; color: var(--accent-2); }
+    .practice-end-total { font-size: 1rem; color: var(--muted); margin-bottom: 14px; }
+    .practice-end-total strong { color: var(--text); }
+    .practice-end-rounds { display: flex; flex-direction: column; gap: 10px; }
+    .prac-end-row { padding: 12px 14px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); }
+    .prac-end-row-top { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+    .prac-end-word { letter-spacing: .08em; }
+    .prac-end-meta { margin-left: auto; font-weight: 600; color: var(--muted); font-size: 0.85rem; }
+    .prac-end-recap { margin: 6px 0 0; font-size: 0.85rem; font-style: italic; color: var(--muted); }
+    /* ===== PRACTICE MODE END (styles) ===== */
   </style>
 </head>
 <body>
@@ -2145,6 +2191,7 @@
           <div class="home-cta">
             <button class="btn primary" id="showCreate">Create a room →</button>
             <button class="btn" id="showJoin">Join with a code</button>
+            <button class="btn" id="showPractice">🤖 Practice with AI</button>
           </div>
           <div class="feature-grid">
             <div class="feature-card">
@@ -2450,6 +2497,50 @@
           </div>
         </div>
       </section>
+
+      <!-- ===== PRACTICE MODE START (markup) ===== -->
+      <section class="screen" id="practiceScreen">
+        <div class="practice-wrap">
+          <div class="practice-header">
+            <span class="practice-tag">🤖 Practice Mode</span>
+            <span class="practice-round" id="pracRoundLabel">Round 1 of 1</span>
+            <span class="badge" id="pracDiffBadge">Easy</span>
+          </div>
+          <div class="practice-timerbar hidden" id="pracTimerWrap">
+            <div class="practice-timerbar-fill" id="pracTimerFill"></div>
+          </div>
+          <div class="board" id="pracBoard"></div>
+          <div class="practice-hint" id="pracHint"><span class="practice-hint-ic">💡</span> <em id="pracHintText"></em></div>
+          <div class="practice-scores">
+            <span>Round <strong id="pracRoundScore">0</strong></span>
+            <span>Total <strong id="pracTotalScore">0</strong></span>
+          </div>
+          <div class="keyboard" id="pracKeyboard"></div>
+          <div class="practice-actions">
+            <button class="btn" id="pracGiveUp" type="button">Give up</button>
+            <button class="btn btn-leave" id="pracQuit" type="button">Quit</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" id="practiceEndScreen">
+        <div class="panel practice-end-panel">
+          <div class="panel-head">
+            <div>
+              <h2>Practice Complete</h2>
+              <p class="subtitle">Here's how you did against Claude's words.</p>
+            </div>
+            <span class="practice-grade" id="pracGrade">—</span>
+          </div>
+          <div class="practice-end-total">Total score: <strong id="pracEndTotal">0</strong></div>
+          <div id="pracEndRounds" class="practice-end-rounds"></div>
+          <div class="home-actions" style="margin-top:18px;">
+            <button class="btn primary" id="pracPlayAgain" type="button">Play Again</button>
+            <button class="btn" id="pracBackMenu" type="button">Back to Menu</button>
+          </div>
+        </div>
+      </section>
+      <!-- ===== PRACTICE MODE END (markup) ===== -->
     </main>
   </div>
 
@@ -2493,6 +2584,49 @@
       </div>
     </div>
   </div>
+
+  <!-- ===== PRACTICE MODE START (setup modal) ===== -->
+  <div id="practiceModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="practiceModalTitle">
+    <div class="modal-card practice-setup">
+      <h3 id="practiceModalTitle">Practice with AI 🤖</h3>
+      <p class="subtitle" style="margin-top:0">Claude picks the word and writes a hint. Race to crack it.</p>
+
+      <div class="prac-field">
+        <label>Difficulty</label>
+        <div class="seg" id="pracDifficulty" role="radiogroup">
+          <button type="button" class="seg-btn active" data-value="easy"><strong>Easy</strong><small>Common everyday words</small></button>
+          <button type="button" class="seg-btn" data-value="medium"><strong>Medium</strong><small>Moderate vocabulary</small></button>
+          <button type="button" class="seg-btn" data-value="hard"><strong>Hard</strong><small>Challenging and uncommon</small></button>
+        </div>
+      </div>
+
+      <div class="prac-field">
+        <label>Rounds</label>
+        <div class="seg seg--compact" id="pracRounds" role="radiogroup">
+          <button type="button" class="seg-btn active" data-value="1">1</button>
+          <button type="button" class="seg-btn" data-value="3">3</button>
+          <button type="button" class="seg-btn" data-value="5">5</button>
+          <button type="button" class="seg-btn" data-value="10">10</button>
+        </div>
+      </div>
+
+      <div class="prac-field">
+        <label>Round timer</label>
+        <div class="seg seg--compact" id="pracTimer" role="radiogroup">
+          <button type="button" class="seg-btn active" data-value="0">Off</button>
+          <button type="button" class="seg-btn" data-value="30">30s</button>
+          <button type="button" class="seg-btn" data-value="60">60s</button>
+          <button type="button" class="seg-btn" data-value="90">90s</button>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn" id="pracCancelBtn" type="button">Cancel</button>
+        <button class="btn primary" id="pracStartBtn" type="button">Start Practice</button>
+      </div>
+    </div>
+  </div>
+  <!-- ===== PRACTICE MODE END (setup modal) ===== -->
 
   <div class="countdown-banner" id="countdownBanner"><span id="countdownText">Starting in 10</span></div>
   <div class="countdown-banner" id="reconnectBanner"><span>Reconnecting…</span></div>
@@ -4124,6 +4258,215 @@
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && !$("leaveModal").classList.contains("hidden")) closeLeaveDialog();
     });
+
+    // ===== PRACTICE MODE START (client) =====
+    // Self-contained solo "Play vs AI" mode. Its own grid/keyboard/timer/state and
+    // its own practice:* socket handlers — it does not touch the multiplayer flow.
+    (function setupPracticeMode() {
+      const COLOUR_CLASS = { correct: "green", present: "yellow", absent: "gray" };
+      const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+      const ps = {
+        difficulty: "easy", rounds: 1, timer: 0,
+        wordLength: 5, maxAttempts: 6,
+        rows: [], feedback: [], currentRow: 0, currentCol: 0,
+        keyState: {}, locked: true, totalScore: 0
+      };
+
+      function segValue(id) {
+        const active = $(id).querySelector(".seg-btn.active");
+        return active ? active.dataset.value : null;
+      }
+      function wireSeg(id) {
+        $(id).querySelectorAll(".seg-btn").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            $(id).querySelectorAll(".seg-btn").forEach((b) => b.classList.remove("active"));
+            btn.classList.add("active");
+          });
+        });
+      }
+      wireSeg("pracDifficulty"); wireSeg("pracRounds"); wireSeg("pracTimer");
+
+      function openModal() { $("practiceModal").classList.remove("hidden"); }
+      function closeModal() { $("practiceModal").classList.add("hidden"); }
+      $("showPractice").addEventListener("click", openModal);
+      $("pracCancelBtn").addEventListener("click", closeModal);
+      $("practiceModal").addEventListener("click", (e) => { if (e.target === $("practiceModal")) closeModal(); });
+
+      function startPractice() {
+        ps.difficulty = segValue("pracDifficulty") || "easy";
+        ps.rounds = Number(segValue("pracRounds") || 1);
+        ps.timer = Number(segValue("pracTimer") || 0);
+        ps.totalScore = 0;
+        $("pracDiffBadge").textContent = cap(ps.difficulty);
+        $("pracTotalScore").textContent = "0";
+        $("pracRoundScore").textContent = "0";
+        $("pracHintText").textContent = "Generating word…";
+        resetBoard(5);
+        ps.locked = true;
+        stopTimer();
+        $("pracTimerWrap").classList.add("hidden");
+        closeModal();
+        showScreen("practice");
+        socket.emit("practice:start", { difficulty: ps.difficulty, rounds: ps.rounds, timer: ps.timer });
+      }
+      $("pracStartBtn").addEventListener("click", startPractice);
+
+      function resetBoard(len) {
+        ps.wordLength = len;
+        ps.rows = Array.from({ length: ps.maxAttempts }, () => Array(len).fill(""));
+        ps.feedback = Array.from({ length: ps.maxAttempts }, () => Array(len).fill(""));
+        ps.currentRow = 0; ps.currentCol = 0; ps.keyState = {};
+        renderBoardP(); renderKeyboardP();
+      }
+      function renderBoardP() {
+        $("pracBoard").innerHTML = ps.rows.map((row, r) => `
+          <div class="board-row">
+            ${row.map((ch, c) => {
+              const col = ps.feedback[r][c];
+              const cls = ["tile", ch ? "filled" : "", col || ""].filter(Boolean).join(" ");
+              return `<div class="${cls}">${escapeHtml(ch)}</div>`;
+            }).join("")}
+          </div>`).join("");
+      }
+      function renderKeyboardP() {
+        const rows = ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"];
+        $("pracKeyboard").innerHTML = rows.map((letters, i) => {
+          const keys = letters.split("").map((l) => `<button class="key ${ps.keyState[l] || ""}" data-pkey="${l}">${l}</button>`);
+          if (i === 2) {
+            keys.unshift(`<button class="key wide" data-pkey="ENTER">Enter</button>`);
+            keys.push(`<button class="key wide" data-pkey="BACKSPACE">⌫</button>`);
+          }
+          return `<div class="key-row">${keys.join("")}</div>`;
+        }).join("");
+        $("pracKeyboard").querySelectorAll("[data-pkey]").forEach((b) => b.addEventListener("click", () => key(b.dataset.pkey)));
+      }
+      function bumpKey(letter, cls) {
+        const rank = { gray: 1, yellow: 2, green: 3 };
+        const cur = ps.keyState[letter];
+        if (!cur || rank[cls] > rank[cur]) ps.keyState[letter] = cls;
+      }
+
+      function key(k) {
+        if (state.screen !== "practice" || ps.locked) return;
+        if (/^[A-Z]$/.test(k) && ps.currentCol < ps.wordLength) {
+          ps.rows[ps.currentRow][ps.currentCol] = k; ps.currentCol += 1; renderBoardP(); return;
+        }
+        if (k === "BACKSPACE" && ps.currentCol > 0) {
+          ps.currentCol -= 1; ps.rows[ps.currentRow][ps.currentCol] = ""; renderBoardP(); return;
+        }
+        if (k === "ENTER") submit();
+      }
+      function submit() {
+        if (ps.locked) return;
+        const guess = ps.rows[ps.currentRow].join("");
+        if (guess.length !== ps.wordLength) { showToast(`Enter a ${ps.wordLength}-letter guess.`); return; }
+        ps.locked = true; // unlocked on feedback or error
+        socket.emit("practice:guess", { guess });
+      }
+      document.addEventListener("keydown", (e) => {
+        if (state.screen !== "practice") return;
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
+        if (/^[a-zA-Z]$/.test(e.key)) key(e.key.toUpperCase());
+        else if (e.key === "Enter") key("ENTER");
+        else if (e.key === "Backspace") key("BACKSPACE");
+      });
+
+      // Cosmetic countdown bar driven purely by CSS animation. Server is authoritative.
+      function startTimer(seconds) {
+        const wrap = $("pracTimerWrap"), fill = $("pracTimerFill");
+        if (!seconds || seconds <= 0) { wrap.classList.add("hidden"); fill.classList.remove("run", "danger"); return; }
+        wrap.classList.remove("hidden");
+        fill.classList.remove("run", "danger");
+        fill.style.transform = "";
+        fill.style.animationDuration = seconds + "s";
+        void fill.offsetWidth; // reflow so the animation restarts each round
+        fill.classList.add("run");
+        if (seconds > 10) {
+          ps._dangerTimer = setTimeout(() => fill.classList.add("danger"), (seconds - 10) * 1000);
+        } else {
+          fill.classList.add("danger");
+        }
+      }
+      function stopTimer() {
+        const fill = $("pracTimerFill");
+        if (ps._dangerTimer) { clearTimeout(ps._dangerTimer); ps._dangerTimer = null; }
+        // Freeze the bar where it is.
+        const t = getComputedStyle(fill).transform;
+        fill.classList.remove("run");
+        fill.style.transform = t === "none" ? "" : t;
+      }
+
+      // ── Socket events ──
+      socket.on("practice:round_start", (p) => {
+        $("pracRoundLabel").textContent = `Round ${p.round} of ${p.totalRounds}`;
+        $("pracHintText").textContent = p.hint || "";
+        $("pracRoundScore").textContent = "0";
+        ps.maxAttempts = p.maxAttempts || 6;
+        resetBoard(p.wordLength || 5);
+        ps.locked = false;
+        startTimer(p.timerSeconds);
+        if (state.screen !== "practice") showScreen("practice");
+      });
+
+      socket.on("practice:feedback", (p) => {
+        const r = ps.currentRow;
+        ps.feedback[r] = (p.colours || []).map((c) => COLOUR_CLASS[c] || "gray");
+        (p.guess || "").split("").forEach((l, i) => bumpKey(l, COLOUR_CLASS[p.colours[i]] || "gray"));
+        renderBoardP(); renderKeyboardP();
+        ps.currentRow += 1; ps.currentCol = 0;
+        ps.locked = ps.currentRow >= ps.maxAttempts; // round_end will follow if terminal
+      });
+
+      socket.on("practice:round_end", (p) => {
+        ps.locked = true;
+        stopTimer();
+        ps.totalScore = p.totalScore;
+        $("pracRoundScore").textContent = String(p.roundScore);
+        $("pracTotalScore").textContent = String(p.totalScore);
+        const reveal = p.outcome === "win" ? `✓ ${p.word} — +${p.roundScore} pts`
+          : p.outcome === "timeout" ? `⏱ Time's up — the word was ${p.word}`
+          : `✗ The word was ${p.word}`;
+        showToast(reveal);
+      });
+
+      socket.on("practice:timeout", () => { stopTimer(); ps.locked = true; });
+
+      socket.on("practice:error", (p) => {
+        ps.locked = false; // let the player re-try the guess
+        showToast(p && p.message ? p.message : "Practice error.");
+      });
+
+      socket.on("practice:game_end", (p) => {
+        $("pracGrade").textContent = p.grade || "—";
+        $("pracEndTotal").textContent = String(p.totalScore || 0);
+        $("pracEndRounds").innerHTML = (p.rounds || []).map((r, i) => {
+          const emoji = r.outcome === "win" ? "✓" : r.outcome === "timeout" ? "⏱" : "✗";
+          const recap = (p.recap && p.recap[i]) ? `<p class="prac-end-recap">${escapeHtml(p.recap[i])}</p>` : "";
+          return `<div class="prac-end-row">
+            <div class="prac-end-row-top">
+              <span>${emoji}</span>
+              <span class="prac-end-word">${escapeHtml(r.word)}</span>
+              <span class="prac-end-meta">${r.attemptsUsed}/6 · ${r.roundScore} pts</span>
+            </div>${recap}</div>`;
+        }).join("");
+        showScreen("practiceEnd");
+      });
+
+      // End-screen + in-game controls.
+      $("pracPlayAgain").addEventListener("click", () => {
+        ps.totalScore = 0;
+        $("pracTotalScore").textContent = "0";
+        $("pracHintText").textContent = "Generating word…";
+        resetBoard(5); ps.locked = true;
+        showScreen("practice");
+        socket.emit("practice:start", { difficulty: ps.difficulty, rounds: ps.rounds, timer: ps.timer });
+      });
+      $("pracBackMenu").addEventListener("click", () => { socket.emit("practice:quit"); showScreen("home"); });
+      $("pracGiveUp").addEventListener("click", () => { if (!ps.locked) socket.emit("practice:forfeit"); });
+      $("pracQuit").addEventListener("click", () => { socket.emit("practice:quit"); showScreen("home"); });
+    })();
+    // ===== PRACTICE MODE END (client) =====
 
     initControls();
     initFloatingLetters();
