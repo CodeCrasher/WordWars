@@ -12,7 +12,6 @@ const WebSocket = require("ws");
 
 const SERVER = path.join(__dirname, "..", "server.js");
 const PORT = 3990;
-const ADMIN_PIN = "1234"; // server default when ADMIN_PIN is unset
 
 function get(port, reqPath) {
   return new Promise((resolve, reject) => {
@@ -38,11 +37,42 @@ async function waitForHealth(port, timeoutMs = 8000) {
   throw new Error(`server on port ${port} did not become healthy in time`);
 }
 
+function postJson(port, reqPath, obj) {
+  return new Promise((resolve, reject) => {
+    const data = Buffer.from(JSON.stringify(obj));
+    const req = http.request(
+      { host: "127.0.0.1", port, path: reqPath, method: "POST",
+        headers: { "Content-Type": "application/json", "Content-Length": data.length } },
+      (res) => {
+        let body = "";
+        res.on("data", (c) => (body += c));
+        res.on("end", () => resolve({ status: res.statusCode, body: body ? JSON.parse(body) : null }));
+      }
+    );
+    req.on("error", reject);
+    req.write(data);
+    req.end();
+  });
+}
+
+// Sign in (dev-login, non-prod only) and return a connected, AUTHENTICATED client
+// — required for hosting a room. Each call uses a distinct account by default.
+let devUserSeq = 0;
+async function authedClient(email) {
+  const who = email || `host${++devUserSeq}@test.dev`;
+  const res = await postJson(PORT, "/auth/dev-login", { email: who });
+  if (!res.body?.ok) throw new Error("dev-login failed: " + JSON.stringify(res.body));
+  const c = new IOClient(PORT, res.body.token);
+  await c.connect();
+  return c;
+}
+
 // Minimal Socket.IO v4 client: just enough of the protocol to connect, emit
 // events with acknowledgement callbacks, and listen for server-pushed events.
 class IOClient {
-  constructor(port) {
+  constructor(port, token) {
     this.port = port;
+    this.authToken = token || null; // session token → carried in the SIO CONNECT packet
     this.ackId = 0;
     this.acks = new Map();
     this.handlers = new Map();
@@ -58,7 +88,8 @@ class IOClient {
 
   _onMessage(msg, onConnect) {
     const eio = msg[0];
-    if (eio === "0") { this.ws.send("40"); return; } // engine open → SIO connect
+    // engine open → SIO connect, attaching auth so the server populates handshake.auth
+    if (eio === "0") { this.ws.send("40" + (this.authToken ? JSON.stringify({ token: this.authToken }) : "")); return; }
     if (eio === "2") { this.ws.send("3"); return; }  // ping → pong
     if (eio !== "4") return;                          // only message packets matter
 
@@ -120,12 +151,11 @@ after(() => { if (server) server.kill("SIGKILL"); });
 // The regression: with a single guesser, the round must end the INSTANT they
 // exhaust their guesses — never wait for the round timer (60s here).
 test("round ends immediately when the lone guesser runs out of guesses", async () => {
-  const host = new IOClient(PORT);
+  const host = await authedClient(); // hosting requires a signed-in account
   const guesser = new IOClient(PORT);
-  await host.connect();
   await guesser.connect();
 
-  const created = await host.emit("room:create", { pin: ADMIN_PIN, name: "Hostplayer", roundTime: 60 });
+  const created = await host.emit("room:create", { name: "Hostplayer", roundTime: 60 });
   assert.ok(created.ok, created.error);
   const code = created.room.code;
 
@@ -165,12 +195,11 @@ test("round ends immediately when the lone guesser runs out of guesses", async (
 // Sanity counterpart: when the lone guesser SOLVES, the round still ends at once
 // and the reason is the happier "all-solved".
 test("round ends immediately (all-solved) when the lone guesser solves", async () => {
-  const host = new IOClient(PORT);
+  const host = await authedClient(); // hosting requires a signed-in account
   const guesser = new IOClient(PORT);
-  await host.connect();
   await guesser.connect();
 
-  const created = await host.emit("room:create", { pin: ADMIN_PIN, name: "Hosttwo", roundTime: 60 });
+  const created = await host.emit("room:create", { name: "Hosttwo", roundTime: 60 });
   assert.ok(created.ok, created.error);
   const joined = await guesser.emit("room:join", { code: created.room.code, name: "Guessertwo" });
   assert.ok(joined.ok, joined.error);
@@ -197,12 +226,11 @@ test("round ends immediately (all-solved) when the lone guesser solves", async (
 // immediate progress update so the picker sees it without waiting for a guess.
 // The hint TEXT must never leak to anyone but the player who revealed it.
 test("hint usage is visible to the word-picker via the progress feed (text never leaks)", async () => {
-  const host = new IOClient(PORT);
+  const host = await authedClient(); // hosting requires a signed-in account
   const guesser = new IOClient(PORT);
-  await host.connect();
   await guesser.connect();
 
-  const created = await host.emit("room:create", { pin: ADMIN_PIN, name: "Hostthree", roundTime: 60 });
+  const created = await host.emit("room:create", { name: "Hostthree", roundTime: 60 });
   assert.ok(created.ok, created.error);
   const joined = await guesser.emit("room:join", { code: created.room.code, name: "Guesserthree" });
   assert.ok(joined.ok, joined.error);
@@ -236,14 +264,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // their name (no session token), reclaiming their disconnected slot — board,
 // score, and chooser turn intact. Brand-new names are turned away mid-game.
 test("a returning player rejoins a live game by name and gets their board back", async () => {
-  const host = new IOClient(PORT);
+  const host = await authedClient(); // hosting requires a signed-in account
   const guesser = new IOClient(PORT);
   const other = new IOClient(PORT); // 3rd player keeps the game alive after a drop
-  await host.connect();
   await guesser.connect();
   await other.connect();
 
-  const created = await host.emit("room:create", { pin: ADMIN_PIN, name: "Hostfour", roundTime: 60 });
+  const created = await host.emit("room:create", { name: "Hostfour", roundTime: 60 });
   assert.ok(created.ok, created.error);
   const code = created.room.code;
   const joined = await guesser.emit("room:join", { code, name: "Returner" });
@@ -287,12 +314,11 @@ test("a returning player rejoins a live game by name and gets their board back",
 
 // A still-CONNECTED name cannot be hijacked by someone else mid-game.
 test("an active player's name cannot be taken over mid-game", async () => {
-  const host = new IOClient(PORT);
+  const host = await authedClient(); // hosting requires a signed-in account
   const guesser = new IOClient(PORT);
-  await host.connect();
   await guesser.connect();
 
-  const created = await host.emit("room:create", { pin: ADMIN_PIN, name: "Hostfive", roundTime: 60 });
+  const created = await host.emit("room:create", { name: "Hostfive", roundTime: 60 });
   assert.ok(created.ok, created.error);
   const code = created.room.code;
   const joined = await guesser.emit("room:join", { code, name: "Active" });
@@ -313,4 +339,38 @@ test("an active player's name cannot be taken over mid-game", async () => {
   host.close();
   guesser.close();
   impostor.close();
+});
+
+// ── Auth: hosting requires a signed-in account; joining does not ──────────────
+
+test("creating a room without signing in is rejected (needAuth)", async () => {
+  const guest = new IOClient(PORT); // no token → unauthenticated
+  await guest.connect();
+  const res = await guest.emit("room:create", { name: "Nobody", roundTime: 60 });
+  assert.equal(res.ok, false, "guests cannot host");
+  assert.equal(res.needAuth, true, "server flags that auth is needed");
+  guest.close();
+});
+
+test("a signed-in account can host, and guests can still join without signing in", async () => {
+  const host = await authedClient("real@player.dev");
+  const created = await host.emit("room:create", { name: "Hostauth", roundTime: 60 });
+  assert.ok(created.ok, created.error);
+  assert.ok(created.room.code, "room was created by the signed-in host");
+
+  // A guest with no account joins the lobby normally.
+  const guest = new IOClient(PORT);
+  await guest.connect();
+  const joined = await guest.emit("room:join", { code: created.room.code, name: "Guestplayer" });
+  assert.ok(joined.ok, joined.error);
+
+  host.close();
+  guest.close();
+});
+
+test("/auth/me reflects the session, and dev-login issues a working token", async () => {
+  const login = await postJson(PORT, "/auth/dev-login", { email: "me@who.dev" });
+  assert.ok(login.body.ok);
+  assert.ok(login.body.token, "dev-login returns a session token");
+  assert.equal(login.body.user.email, "me@who.dev");
 });

@@ -331,6 +331,48 @@
       background: transparent;
     }
 
+    /* ── Sign-in gate on the Create screen ─────────────────────────── */
+    .auth-stack { display: flex; flex-direction: column; gap: 14px; margin-top: 4px; }
+    .auth-btn {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      width: 100%; padding: 13px 16px; border-radius: 999px;
+      border: 1px solid var(--line); background: var(--panel);
+      color: var(--text); font-weight: 700; font-size: 0.98rem; cursor: pointer;
+      position: relative; transition: background .15s, border-color .15s;
+    }
+    .auth-btn:hover:not(:disabled) { background: var(--panel-2); }
+    .auth-btn:disabled { opacity: .6; cursor: not-allowed; }
+    .auth-g {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px; border-radius: 50%;
+      background: #fff; color: #4285f4; font-weight: 900; font-size: 0.95rem;
+      border: 1px solid var(--line);
+    }
+    .auth-soon {
+      position: absolute; right: 14px; font-size: 0.66rem; font-weight: 800;
+      text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+      background: var(--panel-2); border: 1px solid var(--line);
+      border-radius: 999px; padding: 2px 8px;
+    }
+    .auth-sep { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 0.8rem; }
+    .auth-sep::before, .auth-sep::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+    .auth-email-form { display: flex; flex-direction: column; gap: 10px; }
+    .auth-email-form input {
+      width: 100%; padding: 12px 14px; border-radius: 10px;
+      border: 1px solid var(--line); background: var(--panel); color: var(--text);
+      font-size: 1rem;
+    }
+    .auth-msg { margin: 0; font-size: 0.9rem; color: var(--text); min-height: 1.1em; }
+    .auth-msg a { color: var(--accent); }
+    .auth-fine { font-size: 0.78rem; margin: 2px 0 0; }
+    .account-chip {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 10px 14px; border-radius: 12px; margin-bottom: 16px;
+      background: var(--panel-2); border: 1px solid var(--line);
+    }
+    .account-who { font-size: 0.9rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .account-who strong { color: var(--text); }
+
     .form-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2131,37 +2173,61 @@
               <h2>Create a Room</h2>
               <p class="subtitle">Set up your room. Players join with the code. Each round, someone new picks the word.</p>
             </div>
-            <form class="form-grid" id="createForm">
-              <div class="field">
-                <label for="hostName">Host Name</label>
-                <input id="hostName" maxlength="16" value="Host123" autocomplete="off">
+            <!-- Signed-out: sign-in / sign-up gate. Hosting needs an account;
+                 invited players only need the room code. -->
+            <div id="authGate">
+              <p class="subtitle" style="margin-top:0">Hosting a room needs a quick sign-in. Players you invite just enter the code — no account required.</p>
+              <div class="auth-stack">
+                <button class="auth-btn" id="googleSignIn" type="button" disabled title="Coming soon">
+                  <span class="auth-g">G</span>
+                  <span>Sign in with Google</span>
+                  <span class="auth-soon">soon</span>
+                </button>
+                <div class="auth-sep"><span>or use your email</span></div>
+                <form id="magicForm" class="auth-email-form">
+                  <input id="authEmail" type="email" inputmode="email" placeholder="you@example.com" autocomplete="email" required>
+                  <button class="btn primary" type="submit" id="magicBtn">Email me a sign-in link</button>
+                </form>
+                <p class="auth-msg" id="authMsg" role="status"></p>
+                <p class="muted auth-fine">We'll email you a one-time sign-in link — no passwords to remember.</p>
               </div>
-              <div class="field">
-                <label for="adminPin">Admin PIN</label>
-                <input id="adminPin" type="password" value="1234" autocomplete="off">
+            </div>
+
+            <!-- Signed-in: account chip + the room creation form -->
+            <div id="createAuthed" class="hidden">
+              <div class="account-chip">
+                <span class="account-who">Signed in as <strong id="authEmailLabel"></strong></span>
+                <button class="btn ghost" id="signOutBtn" type="button">Sign out</button>
               </div>
-              <div class="field full">
-                <label for="customCodeInput">Room Code <span style="text-transform:none;font-weight:400;opacity:0.7;">(optional)</span></label>
-                <input id="customCodeInput" maxlength="6" placeholder="Pick a word — or leave blank for random" autocomplete="off" style="text-transform:uppercase">
-                <span class="word-hint" id="customCodeHint">3–6 letters or numbers · leave blank for a random code</span>
-              </div>
-              <div class="field full">
-                <label for="timerInput">Round Timer</label>
-                <select id="timerInput">
-                  <option value="60">60 seconds</option>
-                  <option value="120">2 minutes</option>
-                  <option value="180" selected>3 minutes</option>
-                  <option value="300">5 minutes</option>
-                </select>
-              </div>
-              <div class="field full">
-                <p class="subtitle" style="margin:0">Each round, a different player picks the secret word. Rounds = 2× the number of players.</p>
-              </div>
-              <div class="field full">
-                <button class="btn primary" type="submit" style="width:100%">Create Private Room</button>
-                <div class="error" id="createError"></div>
-              </div>
-            </form>
+              <form class="form-grid" id="createForm">
+                <div class="field full">
+                  <label for="hostName">Host Name</label>
+                  <input id="hostName" maxlength="16" value="Host123" autocomplete="off">
+                </div>
+                <div class="field full">
+                  <label for="customCodeInput">Room Code <span style="text-transform:none;font-weight:400;opacity:0.7;">(optional)</span></label>
+                  <input id="customCodeInput" maxlength="6" placeholder="Pick a word — or leave blank for random" autocomplete="off" style="text-transform:uppercase">
+                  <span class="word-hint" id="customCodeHint">3–6 letters or numbers · leave blank for a random code</span>
+                </div>
+                <div class="field full">
+                  <label for="timerInput">Round Timer</label>
+                  <select id="timerInput">
+                    <option value="60">60 seconds</option>
+                    <option value="120">2 minutes</option>
+                    <option value="180" selected>3 minutes</option>
+                    <option value="300">5 minutes</option>
+                  </select>
+                </div>
+                <div class="field full">
+                  <p class="subtitle" style="margin:0">Each round, a different player picks the secret word. Rounds = 2× the number of players.</p>
+                </div>
+                <div class="field full">
+                  <button class="btn primary" type="submit" style="width:100%">Create Private Room</button>
+                  <div class="error" id="createError"></div>
+                </div>
+              </form>
+            </div>
+
             <button class="btn ghost" id="backFromCreate" type="button">← Back</button>
           </div>
         </div>
@@ -2450,6 +2516,7 @@
       screen: "home",
       playerId: null,
       sessionId: null,   // immutable token returned by server; survives socket reconnects
+      user: null,        // signed-in account ({ email }) or null; required only to HOST
       isHost: false,
       room: null,
       // Round-end → next-round handoff. The leaderboard persists until the player
@@ -2824,6 +2891,11 @@
 
       $("createForm").addEventListener("submit", createRoom);
       $("joinForm").addEventListener("submit", joinRoom);
+      $("magicForm").addEventListener("submit", requestMagicLink);
+      $("signOutBtn").addEventListener("click", signOut);
+      $("googleSignIn").addEventListener("click", () => {
+        $("authMsg").textContent = "Google sign-in is coming soon — use email for now.";
+      });
 
       // Live-sanitize the custom room code: uppercase, letters/numbers only.
       $("customCodeInput").addEventListener("input", () => {
@@ -2974,13 +3046,82 @@
       setError("createError", "");
       socket.emit("room:create", {
         name: $("hostName").value.trim(),
-        pin: $("adminPin").value,
         roundTime: Number($("timerInput").value),
         customCode: $("customCodeInput").value.trim().toUpperCase()
       }, (response) => {
-        if (!response?.ok) return setError("createError", response?.error || "Could not create room.");
+        if (!response?.ok) {
+          // Session expired / not signed in → drop back to the sign-in gate.
+          if (response?.needAuth) {
+            state.user = null;
+            renderAuthState();
+            $("authMsg").textContent = "Please sign in to create a room.";
+            return;
+          }
+          return setError("createError", response?.error || "Could not create room.");
+        }
         enterRoom(response);
       });
+    }
+
+    // ── Account / sign-in (magic link) ───────────────────────────────────────
+    // Hosting a room requires a signed-in account; joining never does. We learn
+    // the current account from /auth/me (httpOnly session cookie) and toggle the
+    // Create screen between the sign-in gate and the room form accordingly.
+    async function refreshAuth() {
+      try {
+        const r = await fetch("/auth/me", { credentials: "same-origin" });
+        const data = await r.json();
+        state.user = data.user || null;
+      } catch (_) {
+        state.user = null;
+      }
+      renderAuthState();
+    }
+
+    function renderAuthState() {
+      const authed = !!state.user;
+      const gate = $("authGate"), authed_ = $("createAuthed");
+      if (gate) gate.classList.toggle("hidden", authed);
+      if (authed_) authed_.classList.toggle("hidden", !authed);
+      if (authed && $("authEmailLabel")) $("authEmailLabel").textContent = state.user.email;
+    }
+
+    async function requestMagicLink(event) {
+      event.preventDefault();
+      const email = $("authEmail").value.trim();
+      const btn = $("magicBtn");
+      $("authMsg").textContent = "Sending your link…";
+      btn.disabled = true;
+      try {
+        const r = await fetch("/auth/request-link", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ email })
+        });
+        const data = await r.json();
+        if (!data.ok) { $("authMsg").textContent = data.error || "Could not send the link."; return; }
+        $("authMsg").innerHTML = `Check <strong>${escapeHtml(email)}</strong> for a sign-in link. It expires in 15 minutes.`;
+        // Dev convenience: when SMTP isn't configured, the server returns the link
+        // so you can sign in locally without an email provider.
+        if (data.devLink) {
+          $("authMsg").innerHTML += ` <a href="${data.devLink}">Open link →</a>`;
+        }
+      } catch (_) {
+        $("authMsg").textContent = "Network error — please try again.";
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function signOut() {
+      try { await fetch("/auth/logout", { method: "POST", credentials: "same-origin" }); } catch (_) {}
+      state.user = null;
+      renderAuthState();
+      // Reconnect the socket so it drops the now-invalid session server-side.
+      socket.disconnect();
+      socket.connect();
+      $("authMsg").textContent = "Signed out.";
     }
 
     function joinRoom(event) {
@@ -3978,6 +4119,15 @@
     initFloatingLetters();
     renderBoard();
     renderKeyboard();
+
+    // Resolve the signed-in account on load (and just after a magic-link redirect,
+    // which lands here with ?signedin=1) so the Create screen shows the right view.
+    refreshAuth().then(() => {
+      if (new URLSearchParams(location.search).get("signedin") === "1") {
+        history.replaceState(history.state, "", location.pathname);
+        if (state.user) showScreen("create");
+      }
+    });
 
     // Seed history with two entries:
     //   [0] barrier  – hitting this means "no further back", stay on home

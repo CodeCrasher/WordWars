@@ -28,14 +28,6 @@ process.on("unhandledRejection", (reason) => {
   });
 });
 
-const DEFAULT_PIN = process.env.ADMIN_PIN || "1234";
-// SECURITY: never run production on the well-known default admin PIN.
-if (IS_PROD && DEFAULT_PIN === "1234") {
-  logEvent("fatal", "insecure_admin_pin", {
-    message: "ADMIN_PIN is still the default '1234' in production. Set a strong ADMIN_PIN before deploying."
-  });
-  process.exit(1);
-}
 const ROOM_EXPIRY_MS = 2 * 60 * 60 * 1000;
 const MAX_PLAYERS = 20;
 const MAX_GUESSES = 6;
@@ -131,10 +123,51 @@ const io = new Server(server, {
 // and after a restore — are handled via the room:rejoin flow.
 const rooms = new Map();
 
-app.use(express.static(__dirname));
+// Honour X-Forwarded-Proto/Host behind Railway's proxy so magic-link URLs and
+// the Secure cookie flag resolve to https in production.
+app.set("trust proxy", 1);
+
+// ── Email delivery for magic-link sign-in ────────────────────────────────────
+// Configured via SMTP_* env vars (nodemailer). When SMTP isn't set we can't send
+// mail: sendMail returns false and the auth layer falls back to logging the link
+// (dev) so local sign-in still works without an email provider.
+let mailer = null;
+if (process.env.SMTP_HOST) {
+  try {
+    const nodemailer = require("nodemailer");
+    mailer = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT || 587),
+      secure: process.env.SMTP_SECURE === "true",
+      auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined
+    });
+    logEvent("info", "smtp_configured", { host: process.env.SMTP_HOST });
+  } catch (err) {
+    logEvent("error", "nodemailer_unavailable", { message: err && err.message });
+  }
+} else {
+  logEvent(IS_PROD ? "error" : "warn", "smtp_not_configured", {
+    message: "SMTP_HOST not set — magic-link emails cannot be sent. Set SMTP_* env vars to enable email sign-in."
+  });
+}
+async function sendMail(to, subject, html) {
+  if (!mailer) return false;
+  await mailer.sendMail({
+    from: process.env.SMTP_FROM || "WordWars <no-reply@wordwars.app>",
+    to, subject, html
+  });
+  return true;
+}
+
+const auth = require("./auth")({
+  app, express, redis, logEvent, isProd: IS_PROD, sendMail
+});
+
 app.get("/", (_req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
+
+app.use(express.static(__dirname));
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", uptime: process.uptime() });
@@ -1006,21 +1039,39 @@ async function restoreRooms() {
   }
 }
 
+// Attach the signed-in user (if any) to every socket. The session token rides in
+// via the httpOnly cookie for browsers, or socket.handshake.auth.token for
+// programmatic clients (tests). Never rejects — guests connect fine; only hosting
+// a room requires socket.data.user.
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token
+      || auth.parseCookies(socket.handshake.headers.cookie)[auth.cookieName]
+      || null;
+    socket.data.user = await auth.userFromToken(token);
+  } catch (err) {
+    socket.data.user = null;
+    logEvent("error", "socket_auth_error", { message: err && err.message });
+  }
+  next();
+});
+
 io.on("connection", (socket) => {
   // Capture transport-level socket errors so they surface in the Railway logs.
   socket.on("error", (err) => {
     logEvent("error", "socket_error", { socketId: socket.id, message: err && err.message });
   });
 
-  // Host creates room with name, PIN, and round timer only.
-  // Word and hint are set by each round's chooser.
-  // Total rounds = 2x player count, calculated when session starts.
+  // Host creates a room. Hosting requires a signed-in account (the socket carries
+  // the authenticated user); joining a room never does. Word and hint are set by
+  // each round's chooser. Total rounds = 2x player count, set when the session starts.
   socket.on("room:create", (payload = {}, callback) => {
-    const pin = String(payload.pin || "");
+    if (!socket.data.user) {
+      return callback?.({ ok: false, needAuth: true, error: "Please sign in to create a room." });
+    }
     const name = isDisplayName(payload.name) ? payload.name.trim() : "Host";
     const roundTime = Number(payload.roundTime);
 
-    if (pin !== DEFAULT_PIN) return callback?.({ ok: false, error: "Invalid admin PIN." });
     if (![60, 120, 180, 300].includes(roundTime)) return callback?.({ ok: false, error: "Invalid round timer." });
 
     // Host can pick their own room code (e.g. a word). If they leave it blank,
@@ -1041,6 +1092,7 @@ io.on("connection", (socket) => {
     const room = {
       code,
       hostId: socket.id,
+      createdBy: socket.data.user.email,
       createdAt: Date.now(),
       lastActive: Date.now(),
       status: "lobby",

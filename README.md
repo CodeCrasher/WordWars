@@ -32,17 +32,23 @@ efficiency. Built with Node.js, Express, and Socket.io.
 
 ## Environment Variables
   PORT           → Injected by Railway automatically. Do not set.
-  ADMIN_PIN      → Required to host a room. MUST be overridden in production —
-                   the server refuses to boot if it is left at the default.
   ALLOWED_ORIGIN → Default: * (dev only). In production set it to your Railway
                    domain; if unset it falls back to RAILWAY_PUBLIC_DOMAIN.
   MW_API_KEY     → Required in production (server exits if unset). Merriam-Webster
                    Collegiate Dictionary API key.
                    Get a free key at https://dictionaryapi.com/register/index
                    Set in Railway Dashboard → Service → Variables
-  REDIS_URL      → Optional. When set, active games are snapshotted to Redis and
-                   restored on boot, surviving a redeploy/restart. Add a Railway
-                   Redis service and reference its REDIS_URL. Unset = in-memory only.
+  REDIS_URL      → Optional but recommended. When set, active games AND user
+                   accounts/sessions are stored in Redis and survive a
+                   redeploy/restart. Unset = in-memory only (accounts reset on
+                   restart). Add a Railway Redis service and reference its REDIS_URL.
+  SMTP_HOST,     → Email delivery for passwordless sign-in (magic links). Hosting a
+  SMTP_PORT,       room requires signing in; joining does not. Without SMTP, sign-in
+  SMTP_USER,       still works in development (the link is logged / returned by the
+  SMTP_PASS,       API) but production cannot email links. See .env.example.
+  SMTP_FROM
+  PUBLIC_BASE_URL→ Optional. Base URL used to build magic-link URLs. Defaults to the
+                   request host (correct behind Railway's proxy).
 
 ## Useful Commands
   railway logs      # tail live logs

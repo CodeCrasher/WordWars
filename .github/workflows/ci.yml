@@ -33,7 +33,6 @@ jobs:
           kill $SERVER_PID
         env:
           PORT: 3000
-          ADMIN_PIN: "1234"
 
       - name: Confirm Railway config exists
         run: test -f railway.toml && echo "railway.toml found"
