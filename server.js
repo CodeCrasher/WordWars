@@ -1649,6 +1649,18 @@ function pickFallbackWord(difficulty, usedWords) {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
+// Rolling memory of recently-served words ACROSS sessions. Without this, a brand
+// new game's first round always sends an identical prompt to Claude (usedWords is
+// empty), and the model reliably returns the same word — so the first word never
+// felt random. We feed these back as an explicit "avoid" list.
+const recentPracticeWords = [];
+const RECENT_WORDS_MAX = 40;
+function rememberPracticeWord(word) {
+  if (!word) return;
+  recentPracticeWords.push(String(word).toUpperCase());
+  while (recentPracticeWords.length > RECENT_WORDS_MAX) recentPracticeWords.shift();
+}
+
 const WORD_SYSTEM_PROMPT = [
   "You are a word selector for a Wordle-style word game. Your job is to choose a single English word and write a contextual hint for it.",
   "Rules:",
@@ -1660,15 +1672,21 @@ const WORD_SYSTEM_PROMPT = [
   "- The hint should read like a crossword clue — evocative, not definitional"
 ].join("\n");
 
-function wordUserPrompt(difficulty, usedWords) {
-  const used = (usedWords && usedWords.length) ? usedWords.join(", ") : "none";
+function wordUserPrompt(difficulty, avoidWords) {
+  const avoid = (avoidWords && avoidWords.length) ? avoidWords.join(", ") : "none";
+  // Entropy: changing the prompt each call makes the word vary even when the model
+  // ignores `temperature`. The random starting letter is the strongest diversifier.
+  const seed = Math.floor(Math.random() * 1e9);
+  const letters = "ABCDEFGHILMNOPRSTUW"; // skip rare/awkward first letters (J,K,Q,V,X,Y,Z)
+  const letter = letters[Math.floor(Math.random() * letters.length)];
   return [
     `Select a ${difficulty} difficulty word.`,
     "Difficulty guidelines:",
     "- easy: 4–5 letters, high-frequency common English nouns or verbs (e.g. CHAIR, BRAVE)",
     "- medium: 5–6 letters, moderate frequency (e.g. FLAIR, TROVE, SHRUB)",
     "- hard: 6–7 letters, uncommon or multi-syllabic (e.g. CIPHER, ZENITH, WALRUS)",
-    `Words already used this session (do not repeat): ${used}`,
+    `Do NOT use any of these recently-used words: ${avoid}`,
+    `Variety seed: ${seed}. Prefer a fresh, non-obvious word that ideally starts with "${letter}"; if no natural ${difficulty} word fits that letter, choose any suitable one. Don't default to the most common pick.`,
     "Return JSON only."
   ].join("\n");
 }
@@ -1677,6 +1695,11 @@ function wordUserPrompt(difficulty, usedWords) {
 // failure, logs and falls back to the hardcoded list so the session never breaks.
 async function generateWord(difficulty, usedWords) {
   const [min, max] = PRACTICE_LENGTH_RANGE[difficulty] || PRACTICE_LENGTH_RANGE.easy;
+  // Avoid both this session's words AND recently-served words across sessions, so
+  // the first word of a fresh game isn't always identical.
+  const avoid = Array.from(new Set(
+    [...(usedWords || []), ...recentPracticeWords].map((w) => String(w).toUpperCase())
+  ));
   if (anthropic) {
     try {
       const msg = await anthropic.messages.create({
@@ -1684,16 +1707,17 @@ async function generateWord(difficulty, usedWords) {
         max_tokens: 256,
         temperature: 0.8,
         system: WORD_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: wordUserPrompt(difficulty, usedWords) }]
+        messages: [{ role: "user", content: wordUserPrompt(difficulty, avoid) }]
       });
       const text = (msg.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
       const parsed = extractJson(text);
       const word = parsed && normalizeWord(parsed.word);
       const hint = parsed && String(parsed.hint || "").trim();
-      const used = new Set((usedWords || []).map((w) => String(w).toUpperCase()));
+      const used = new Set(avoid);
       const re = new RegExp(`^[A-Z]{${min},${max}}$`);
       if (word && hint && re.test(word) && !used.has(word) &&
           !hint.toUpperCase().includes(word)) {
+        rememberPracticeWord(word);
         return { word, hint, source: "ai" };
       }
       logEvent("warn", "practice_word_rejected", { difficulty, word: word || null });
@@ -1701,7 +1725,9 @@ async function generateWord(difficulty, usedWords) {
       logEvent("error", "practice_word_gen_failed", { message: err && err.message });
     }
   }
-  return { ...pickFallbackWord(difficulty, usedWords), source: "fallback" };
+  const fb = pickFallbackWord(difficulty, avoid);
+  rememberPracticeWord(fb.word);
+  return { ...fb, source: "fallback" };
 }
 
 const RECAP_SYSTEM_PROMPT = [
