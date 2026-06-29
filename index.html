@@ -1074,6 +1074,21 @@
       border-color: var(--accent-2);
     }
 
+    /* Match the secondary CTA styling so the three landing buttons read as a set. */
+    #showPractice {
+      height: 52px;
+      background: transparent;
+      border: 1px solid var(--accent-2);
+      color: var(--accent-2);
+      box-shadow: none;
+    }
+
+    #showPractice:hover {
+      background: color-mix(in srgb, var(--accent-2) 10%, transparent);
+      transform: translateY(-2px);
+      border-color: var(--accent-2);
+    }
+
     .how-it-works {
       border-top: 1px solid var(--line);
       padding-top: 16px;
@@ -2141,6 +2156,7 @@
     .prac-field > label { display: block; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 8px; }
     .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
     .seg--compact { grid-template-columns: repeat(4, 1fr); }
+    .seg--three { grid-template-columns: repeat(3, 1fr); }
     .seg-btn {
       display: flex; flex-direction: column; align-items: center; gap: 2px;
       padding: 10px 8px; border-radius: 10px; cursor: pointer;
@@ -2612,11 +2628,10 @@
 
       <div class="prac-field">
         <label>Round timer</label>
-        <div class="seg seg--compact" id="pracTimer" role="radiogroup">
-          <button type="button" class="seg-btn active" data-value="0">Off</button>
-          <button type="button" class="seg-btn" data-value="30">30s</button>
-          <button type="button" class="seg-btn" data-value="60">60s</button>
-          <button type="button" class="seg-btn" data-value="90">90s</button>
+        <div class="seg seg--compact seg--three" id="pracTimer" role="radiogroup">
+          <button type="button" class="seg-btn active" data-value="60">60s</button>
+          <button type="button" class="seg-btn" data-value="180">3 min</button>
+          <button type="button" class="seg-btn" data-value="300">5 min</button>
         </div>
       </div>
 

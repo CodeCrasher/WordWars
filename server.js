@@ -1853,7 +1853,7 @@ io.on("connection", (socket) => {
   socket.on("practice:start", async (payload = {}) => {
     const difficulty = ["easy", "medium", "hard"].includes(payload.difficulty) ? payload.difficulty : null;
     const rounds = [1, 3, 5, 10].includes(Number(payload.rounds)) ? Number(payload.rounds) : null;
-    const timer = [0, 30, 60, 90].includes(Number(payload.timer)) ? Number(payload.timer) : null;
+    const timer = [60, 180, 300].includes(Number(payload.timer)) ? Number(payload.timer) : null;
     if (!difficulty || rounds == null || timer == null) {
       return socket.emit("practice:error", { message: "Invalid practice settings." });
     }
