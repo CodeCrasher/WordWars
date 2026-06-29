@@ -143,6 +143,7 @@ let server;
 before(async () => {
   const env = { ...process.env, NODE_ENV: "development", PORT: String(PORT) };
   delete env.MW_API_KEY; // force fail-open validation so the test runs offline
+  env.REQUIRE_HOST_AUTH = "true"; // enforce host-auth so the auth tests are meaningful
   server = spawn(process.execPath, [SERVER], { env, stdio: ["ignore", "pipe", "pipe"] });
   await waitForHealth(PORT);
 });
@@ -373,4 +374,31 @@ test("/auth/me reflects the session, and dev-login issues a working token", asyn
   assert.ok(login.body.ok);
   assert.ok(login.body.token, "dev-login returns a session token");
   assert.equal(login.body.user.email, "me@who.dev");
+});
+
+// With no email provider configured (and no explicit override), hosting is OPEN so
+// the rest of the app stays usable while email is still being set up. This runs on
+// its own server instance so the shared (auth-enforced) one is untouched.
+test("hosting is open when no email provider is configured", async () => {
+  const port = 3991;
+  const env = { ...process.env, NODE_ENV: "development", PORT: String(port) };
+  delete env.MW_API_KEY;
+  delete env.REQUIRE_HOST_AUTH;  // rely on the default
+  delete env.RESEND_API_KEY;
+  delete env.SMTP_HOST;          // → no mail configured → auth not required
+  const srv = spawn(process.execPath, [SERVER], { env, stdio: ["ignore", "pipe", "pipe"] });
+  try {
+    await waitForHealth(port);
+    const guest = new IOClient(port); // no token at all
+    await guest.connect();
+    const res = await guest.emit("room:create", { name: "Soloplayer", roundTime: 60 });
+    assert.ok(res.ok, "a guest can host when auth isn't required yet");
+    assert.ok(res.room.code, "room created without signing in");
+
+    const me = JSON.parse((await get(port, "/auth/me")).body);
+    assert.equal(me.authRequired, false, "/auth/me advertises that hosting is open");
+    guest.close();
+  } finally {
+    srv.kill("SIGKILL");
+  }
 });

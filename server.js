@@ -128,38 +128,84 @@ const rooms = new Map();
 app.set("trust proxy", 1);
 
 // ── Email delivery for magic-link sign-in ────────────────────────────────────
-// Configured via SMTP_* env vars (nodemailer). When SMTP isn't set we can't send
-// mail: sendMail returns false and the auth layer falls back to logging the link
-// (dev) so local sign-in still works without an email provider.
-let mailer = null;
+// Two providers, in priority order:
+//   1. Resend HTTP API   — set RESEND_API_KEY (preferred; no SMTP, no extra deps).
+//   2. SMTP (nodemailer) — set SMTP_* (works with any provider, incl. Resend SMTP).
+// If neither is set, sendMail returns false and the auth layer falls back to
+// logging the link (dev) so local sign-in still works without an email provider.
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const MAIL_FROM = process.env.MAIL_FROM || process.env.SMTP_FROM || "WordWars <onboarding@resend.dev>";
+
+let smtpMailer = null;
 if (process.env.SMTP_HOST) {
   try {
     const nodemailer = require("nodemailer");
-    mailer = nodemailer.createTransport({
+    smtpMailer = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: Number(process.env.SMTP_PORT || 587),
       secure: process.env.SMTP_SECURE === "true",
       auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined
     });
-    logEvent("info", "smtp_configured", { host: process.env.SMTP_HOST });
   } catch (err) {
     logEvent("error", "nodemailer_unavailable", { message: err && err.message });
   }
-} else {
-  logEvent(IS_PROD ? "error" : "warn", "smtp_not_configured", {
-    message: "SMTP_HOST not set — magic-link emails cannot be sent. Set SMTP_* env vars to enable email sign-in."
-  });
 }
-async function sendMail(to, subject, html) {
-  if (!mailer) return false;
-  await mailer.sendMail({
-    from: process.env.SMTP_FROM || "WordWars <no-reply@wordwars.app>",
-    to, subject, html
+
+if (RESEND_API_KEY) logEvent("info", "mail_provider", { provider: "resend", from: MAIL_FROM });
+else if (smtpMailer) logEvent("info", "mail_provider", { provider: "smtp", host: process.env.SMTP_HOST, from: MAIL_FROM });
+else logEvent(IS_PROD ? "error" : "warn", "mail_not_configured", {
+  message: "No RESEND_API_KEY or SMTP_HOST set — magic-link emails cannot be sent. Set one to enable email sign-in."
+});
+
+async function sendViaResend(to, subject, html) {
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ from: MAIL_FROM, to, subject, html })
   });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`Resend API ${res.status}: ${detail.slice(0, 300)}`);
+  }
   return true;
 }
 
+// Returns true if the message was accepted by a provider, false if no provider is
+// configured. Throws only when a configured provider hard-fails with no fallback —
+// the auth layer treats that as "not sent" too.
+async function sendMail(to, subject, html) {
+  if (RESEND_API_KEY) {
+    try {
+      return await sendViaResend(to, subject, html);
+    } catch (err) {
+      logEvent("error", "resend_send_failed", { message: err && err.message });
+      if (!smtpMailer) return false; // surface honest "couldn't send" to the user
+      // else fall through and try SMTP
+    }
+  }
+  if (smtpMailer) {
+    await smtpMailer.sendMail({ from: MAIL_FROM, to, subject, html });
+    return true;
+  }
+  return false;
+}
+
+// ── Host-auth policy ─────────────────────────────────────────────────────────
+// Hosting a room can require a signed-in account. Default: require it ONLY once
+// we can actually email sign-in links (a provider is configured) — so while email
+// is still being set up, hosting stays open and the rest of the app is fully
+// usable. Override explicitly with REQUIRE_HOST_AUTH=true|false.
+const mailConfigured = Boolean(RESEND_API_KEY || smtpMailer);
+const REQUIRE_HOST_AUTH = (() => {
+  const v = process.env.REQUIRE_HOST_AUTH;
+  if (v === "true") return true;
+  if (v === "false") return false;
+  return mailConfigured;
+})();
+logEvent("info", "host_auth_policy", { requireHostAuth: REQUIRE_HOST_AUTH, mailConfigured });
+
 const auth = require("./auth")({
+  requireHostAuth: REQUIRE_HOST_AUTH,
   app, express, redis, logEvent, isProd: IS_PROD, sendMail
 });
 
@@ -1066,7 +1112,7 @@ io.on("connection", (socket) => {
   // the authenticated user); joining a room never does. Word and hint are set by
   // each round's chooser. Total rounds = 2x player count, set when the session starts.
   socket.on("room:create", (payload = {}, callback) => {
-    if (!socket.data.user) {
+    if (REQUIRE_HOST_AUTH && !socket.data.user) {
       return callback?.({ ok: false, needAuth: true, error: "Please sign in to create a room." });
     }
     const name = isDisplayName(payload.name) ? payload.name.trim() : "Host";
@@ -1092,7 +1138,7 @@ io.on("connection", (socket) => {
     const room = {
       code,
       hostId: socket.id,
-      createdBy: socket.data.user.email,
+      createdBy: socket.data.user ? socket.data.user.email : null,
       createdAt: Date.now(),
       lastActive: Date.now(),
       status: "lobby",

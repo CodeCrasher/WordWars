@@ -2195,7 +2195,7 @@
 
             <!-- Signed-in: account chip + the room creation form -->
             <div id="createAuthed" class="hidden">
-              <div class="account-chip">
+              <div class="account-chip" id="accountChip">
                 <span class="account-who">Signed in as <strong id="authEmailLabel"></strong></span>
                 <button class="btn ghost" id="signOutBtn" type="button">Sign out</button>
               </div>
@@ -2517,6 +2517,7 @@
       playerId: null,
       sessionId: null,   // immutable token returned by server; survives socket reconnects
       user: null,        // signed-in account ({ email }) or null; required only to HOST
+      authRequired: true, // whether hosting requires sign-in (from /auth/me); open until email is configured
       isHost: false,
       room: null,
       // Round-end → next-round handoff. The leaderboard persists until the player
@@ -3072,6 +3073,7 @@
         const r = await fetch("/auth/me", { credentials: "same-origin" });
         const data = await r.json();
         state.user = data.user || null;
+        state.authRequired = data.authRequired !== false; // default to required if unknown
       } catch (_) {
         state.user = null;
       }
@@ -3080,9 +3082,13 @@
 
     function renderAuthState() {
       const authed = !!state.user;
-      const gate = $("authGate"), authed_ = $("createAuthed");
-      if (gate) gate.classList.toggle("hidden", authed);
-      if (authed_) authed_.classList.toggle("hidden", !authed);
+      // Show the room form when signed in OR when hosting doesn't require auth yet
+      // (email not configured). The sign-in gate only blocks when auth is required.
+      const showForm = authed || !state.authRequired;
+      if ($("authGate")) $("authGate").classList.toggle("hidden", showForm);
+      if ($("createAuthed")) $("createAuthed").classList.toggle("hidden", !showForm);
+      // The "signed in as…" chip only makes sense when actually signed in.
+      if ($("accountChip")) $("accountChip").classList.toggle("hidden", !authed);
       if (authed && $("authEmailLabel")) $("authEmailLabel").textContent = state.user.email;
     }
 
@@ -3101,11 +3107,15 @@
         });
         const data = await r.json();
         if (!data.ok) { $("authMsg").textContent = data.error || "Could not send the link."; return; }
-        $("authMsg").innerHTML = `Check <strong>${escapeHtml(email)}</strong> for a sign-in link. It expires in 15 minutes.`;
-        // Dev convenience: when SMTP isn't configured, the server returns the link
-        // so you can sign in locally without an email provider.
-        if (data.devLink) {
-          $("authMsg").innerHTML += ` <a href="${data.devLink}">Open link →</a>`;
+        if (data.emailed) {
+          // Email actually went out.
+          $("authMsg").innerHTML = `Check <strong>${escapeHtml(email)}</strong> for a sign-in link. It expires in 15 minutes. (Don't see it? Check spam.)`;
+        } else if (data.devLink) {
+          // Dev: SMTP isn't configured, so the server hands back the link directly.
+          $("authMsg").innerHTML = `Email isn't configured on this server — use this one-time link: <a href="${data.devLink}">Open link →</a>`;
+        } else {
+          // Prod with no/broken email config — be honest rather than claim it sent.
+          $("authMsg").textContent = "Couldn't send the email — this server's email delivery isn't set up yet. Ask the host to configure SMTP.";
         }
       } catch (_) {
         $("authMsg").textContent = "Network error — please try again.";

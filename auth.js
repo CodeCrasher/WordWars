@@ -27,7 +27,7 @@ function escapeHtml(value) {
   ));
 }
 
-module.exports = function setupAuth({ app, express, redis, logEvent, isProd, sendMail, cookieName = "ww_session" }) {
+module.exports = function setupAuth({ app, express, redis, logEvent, isProd, sendMail, requireHostAuth = true, cookieName = "ww_session" }) {
   // ── Storage: Redis when available, else in-memory with manual expiry ──────────
   const mem = { users: new Map(), magic: new Map(), sessions: new Map() };
   function memSet(bucket, key, val, ttlSec) {
@@ -175,10 +175,12 @@ module.exports = function setupAuth({ app, express, redis, logEvent, isProd, sen
     res.redirect("/?signedin=1");
   });
 
-  // Who am I? Used by the client on load to render signed-in state.
+  // Who am I? Used by the client on load to render signed-in state. authRequired
+  // tells the client whether hosting needs sign-in (so it can skip the gate while
+  // email isn't configured yet).
   app.get("/auth/me", async (req, res) => {
     const user = await userFromReq(req);
-    res.json({ user: user ? { email: user.email } : null });
+    res.json({ user: user ? { email: user.email } : null, authRequired: requireHostAuth });
   });
 
   app.post("/auth/logout", async (req, res) => {

@@ -42,11 +42,14 @@ efficiency. Built with Node.js, Express, and Socket.io.
                    accounts/sessions are stored in Redis and survive a
                    redeploy/restart. Unset = in-memory only (accounts reset on
                    restart). Add a Railway Redis service and reference its REDIS_URL.
-  SMTP_HOST,     → Email delivery for passwordless sign-in (magic links). Hosting a
-  SMTP_PORT,       room requires signing in; joining does not. Without SMTP, sign-in
-  SMTP_USER,       still works in development (the link is logged / returned by the
-  SMTP_PASS,       API) but production cannot email links. See .env.example.
-  SMTP_FROM
+  Email delivery → Passwordless sign-in (magic links) needs an email provider.
+                   Joining a room never needs sign-in. Pick ONE provider:
+                   • RESEND_API_KEY (+ MAIL_FROM)  → preferred; Resend HTTP API.
+                   • SMTP_HOST/PORT/SECURE/USER/PASS/SMTP_FROM → SMTP fallback.
+                   Full step-by-step: docs/AUTH_SETUP.md
+  REQUIRE_HOST_AUTH → Whether hosting a room requires sign-in. Unset (default) =
+                   required only once email is configured, so hosting stays OPEN
+                   while you set email up. true = always; false = never.
   PUBLIC_BASE_URL→ Optional. Base URL used to build magic-link URLs. Defaults to the
                    request host (correct behind Railway's proxy).
 
