@@ -2137,7 +2137,13 @@
     .practice-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; }
     .practice-tag { font-weight: 800; color: var(--accent-2); }
     .practice-round { font-weight: 700; color: var(--muted); }
-    .practice-timerbar { width: min(420px, 100%); height: 8px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
+    .practice-timer { width: min(420px, 100%); display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .practice-timer-num {
+      font-family: var(--font-display); font-weight: 900; font-size: 1.5rem;
+      font-variant-numeric: tabular-nums; color: var(--text); line-height: 1;
+    }
+    .practice-timer-num.danger { color: var(--danger); }
+    .practice-timerbar { width: 100%; height: 8px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
     .practice-timerbar-fill { height: 100%; width: 100%; background: var(--accent-2); transform-origin: left center; }
     .practice-timerbar-fill.run { animation: pracCountdown linear forwards; }
     @keyframes pracCountdown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
@@ -2147,6 +2153,9 @@
       background: var(--panel-2); border: 1px dashed var(--line); color: var(--muted); font-size: 0.95rem;
     }
     .practice-hint em { color: var(--text); font-style: italic; }
+    .practice-hint-area { width: min(420px, 100%); display: flex; justify-content: center; }
+    .practice-hint-area .hint-btn { width: 100%; }
+    .practice-hint-area .practice-hint { width: 100%; }
     .practice-scores { display: flex; gap: 22px; font-size: 0.9rem; color: var(--muted); }
     .practice-scores strong { color: var(--text); font-size: 1.05rem; }
     .practice-actions { display: flex; gap: 10px; }
@@ -2522,11 +2531,15 @@
             <span class="practice-round" id="pracRoundLabel">Round 1 of 1</span>
             <span class="badge" id="pracDiffBadge">Easy</span>
           </div>
-          <div class="practice-timerbar hidden" id="pracTimerWrap">
-            <div class="practice-timerbar-fill" id="pracTimerFill"></div>
+          <div class="practice-timer hidden" id="pracTimerWrap">
+            <div class="practice-timer-num" id="pracTimerText">1:00</div>
+            <div class="practice-timerbar"><div class="practice-timerbar-fill" id="pracTimerFill"></div></div>
           </div>
           <div class="board" id="pracBoard"></div>
-          <div class="practice-hint" id="pracHint"><span class="practice-hint-ic">💡</span> <em id="pracHintText"></em></div>
+          <div class="practice-hint-area">
+            <button class="btn hint-btn" id="pracRevealHint" type="button">💡 Reveal Hint</button>
+            <div class="practice-hint hidden" id="pracHint"><span class="practice-hint-ic">💡</span> <em id="pracHintText"></em></div>
+          </div>
           <div class="practice-scores">
             <span>Round <strong id="pracRoundScore">0</strong></span>
             <span>Total <strong id="pracTotalScore">0</strong></span>
@@ -4317,6 +4330,8 @@
         $("pracTotalScore").textContent = "0";
         $("pracRoundScore").textContent = "0";
         $("pracHintText").textContent = "Generating word…";
+        $("pracHint").classList.remove("hidden");
+        $("pracRevealHint").classList.add("hidden");
         resetBoard(5);
         ps.locked = true;
         stopTimer();
@@ -4387,35 +4402,57 @@
         else if (e.key === "Backspace") key("BACKSPACE");
       });
 
-      // Cosmetic countdown bar driven purely by CSS animation. Server is authoritative.
+      // Countdown: a numeric mm:ss readout (updated every 250ms) plus the CSS-driven
+      // bar. Cosmetic only — the server is authoritative and fires practice:timeout.
       function startTimer(seconds) {
-        const wrap = $("pracTimerWrap"), fill = $("pracTimerFill");
+        const wrap = $("pracTimerWrap"), fill = $("pracTimerFill"), num = $("pracTimerText");
+        if (ps._numTimer) { clearInterval(ps._numTimer); ps._numTimer = null; }
         if (!seconds || seconds <= 0) { wrap.classList.add("hidden"); fill.classList.remove("run", "danger"); return; }
         wrap.classList.remove("hidden");
+        // Bar animation
         fill.classList.remove("run", "danger");
         fill.style.transform = "";
         fill.style.animationDuration = seconds + "s";
         void fill.offsetWidth; // reflow so the animation restarts each round
         fill.classList.add("run");
-        if (seconds > 10) {
-          ps._dangerTimer = setTimeout(() => fill.classList.add("danger"), (seconds - 10) * 1000);
-        } else {
-          fill.classList.add("danger");
-        }
+        // Numeric readout
+        num.classList.remove("danger");
+        num.textContent = formatTime(seconds);
+        const startedAt = Date.now();
+        ps._numTimer = setInterval(() => {
+          const left = Math.max(0, seconds - Math.floor((Date.now() - startedAt) / 1000));
+          num.textContent = formatTime(left);
+          const danger = left <= 10;
+          num.classList.toggle("danger", danger);
+          fill.classList.toggle("danger", danger);
+          if (left <= 0) { clearInterval(ps._numTimer); ps._numTimer = null; }
+        }, 250);
       }
       function stopTimer() {
         const fill = $("pracTimerFill");
-        if (ps._dangerTimer) { clearTimeout(ps._dangerTimer); ps._dangerTimer = null; }
+        if (ps._numTimer) { clearInterval(ps._numTimer); ps._numTimer = null; }
         // Freeze the bar where it is.
         const t = getComputedStyle(fill).transform;
         fill.classList.remove("run");
         fill.style.transform = t === "none" ? "" : t;
       }
 
+      // Hint is hidden until revealed (same opt-in behaviour as multiplayer).
+      function resetHint(hint) {
+        ps.hint = hint || "";
+        $("pracHintText").textContent = ps.hint;
+        $("pracHint").classList.add("hidden");
+        $("pracRevealHint").classList.remove("hidden");
+      }
+      $("pracRevealHint").addEventListener("click", () => {
+        $("pracHint").classList.remove("hidden");
+        $("pracRevealHint").classList.add("hidden");
+      });
+
       // ── Socket events ──
       socket.on("practice:round_start", (p) => {
         $("pracRoundLabel").textContent = `Round ${p.round} of ${p.totalRounds}`;
-        $("pracHintText").textContent = p.hint || "";
+        resetHint(p.hint);
         $("pracRoundScore").textContent = "0";
         ps.maxAttempts = p.maxAttempts || 6;
         resetBoard(p.wordLength || 5);
@@ -4473,6 +4510,8 @@
         ps.totalScore = 0;
         $("pracTotalScore").textContent = "0";
         $("pracHintText").textContent = "Generating word…";
+        $("pracHint").classList.remove("hidden");
+        $("pracRevealHint").classList.add("hidden");
         resetBoard(5); ps.locked = true;
         showScreen("practice");
         socket.emit("practice:start", { difficulty: ps.difficulty, rounds: ps.rounds, timer: ps.timer });
