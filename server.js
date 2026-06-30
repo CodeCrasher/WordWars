@@ -45,6 +45,11 @@ const ROUND_END_DELAY = 8000;
 // start picking. Each player leaves the leaderboard on their own — by tapping to
 // continue, or automatically the moment the next round actually starts.
 const ROUND_REVEAL_DELAY = 4000;
+// A chooser who hasn't locked in a word within this window is automatically
+// passed over so one slow picker can't stall the whole room. The picker can also
+// hand off early (game:passTurn). A skipped player keeps their place in the
+// rotation and is asked again on the next full cycle. Overridable for tuning/tests.
+const CHOOSER_PICK_SECONDS = Math.max(10, Number(process.env.CHOOSER_PICK_SECONDS) || 180);
 
 const MW_API_KEY = process.env.MW_API_KEY;
 if (!MW_API_KEY) {
@@ -634,8 +639,36 @@ function getActiveRoundSnapshot(room, player) {
 function clearRoomTimers(room) {
   if (room.timerInterval) clearInterval(room.timerInterval);
   if (room.countdownInterval) clearInterval(room.countdownInterval);
+  if (room.chooserInterval) clearInterval(room.chooserInterval);
   room.timerInterval = null;
   room.countdownInterval = null;
+  room.chooserInterval = null;
+}
+
+function clearChooserTimer(room) {
+  if (room.chooserInterval) clearInterval(room.chooserInterval);
+  room.chooserInterval = null;
+}
+
+// SERVER-AUTHORITATIVE pick clock. While a room waits on the chooser, this
+// broadcasts game:chooserTick every second so the picker (and the players
+// watching) see the countdown; when it reaches zero the turn is automatically
+// handed to the next player in the queue. Only armed when there's actually
+// someone else to pass to.
+function startChooserTimer(room) {
+  clearChooserTimer(room);
+  let remaining = CHOOSER_PICK_SECONDS;
+  io.to(room.code).emit("game:chooserTick", { remaining });
+  room.chooserInterval = setInterval(() => {
+    remaining -= 1;
+    io.to(room.code).emit("game:chooserTick", { remaining });
+    if (remaining <= 0) {
+      clearChooserTimer(room);
+      const slow = room.players.get(room.currentChooserId);
+      room.chooserSkips = (room.chooserSkips || 0) + 1; // only timeouts count toward the all-idle guard
+      passChooserTurn(room, slow ? slow.name : "The picker", "timeout");
+    }
+  }, 1000);
 }
 
 function finishRound(room, reason = "complete") {
@@ -736,6 +769,7 @@ function startRoundTimer(room) {
 
 function startGameRound(room, roundConfig = null) {
   clearRoomTimers(room);
+  room.chooserSkips = 0; // a word was locked in — clear the all-idle guard
   resetRoundPlayerState(room);
 
   if (roundConfig) {
@@ -774,8 +808,44 @@ function startRoundRobin(room) {
   } else {
     room.chooserIndex = (room.chooserIndex + 1) % Math.max(room.playerOrder.length, 1);
   }
+  room.chooserSkips = 0; // fresh cycle — reset the all-idle safeguard
+  assignChooser(room);
+}
 
-  // Remove players who left or disconnected
+// Hand the pick to the NEXT player in the queue without rebuilding the order or
+// resetting to the top — safe to call mid-cycle (including round 0). Triggered
+// when the chooser runs out of pick time or hands off voluntarily. The skipped
+// player keeps their slot and is asked again on the next full rotation.
+function passChooserTurn(room, skippedName, reason = "timeout") {
+  if (room.status !== "choosing" || !room.waitingForWord) return;
+  clearChooserTimer(room);
+  room.waitingForWord = false;
+
+  io.to(room.code).emit("game:chooserPassed", {
+    skippedName: skippedName || "The picker",
+    reason
+  });
+
+  const queueLen = room.playerOrder.filter(id => room.players.has(id)).length;
+  // All-idle safeguard: a full cycle of consecutive timeouts with nobody
+  // picking → re-ask the current player but stop the auto-timer so we don't
+  // loop forever. Any successful pick resets the counter (startGameRound).
+  const stopTimer = queueLen > 0 && (room.chooserSkips || 0) >= queueLen;
+
+  if (queueLen > 1 && !stopTimer) {
+    room.chooserIndex = (room.chooserIndex + 1) % room.playerOrder.length;
+  }
+  assignChooser(room, { noTimer: stopTimer });
+}
+
+// Put the room into the "choosing" state for whoever sits at chooserIndex and
+// (unless suppressed) arm the auto-pass clock. Index selection happens in the
+// callers; this is the shared "ask this player to pick" step.
+function assignChooser(room, opts = {}) {
+  clearChooserTimer(room);
+
+  // Remove players who left the room entirely (disconnected-but-present players
+  // are kept so they can reclaim their turn on reconnect).
   room.playerOrder = room.playerOrder.filter(id => room.players.has(id));
 
   if (room.playerOrder.length === 0) {
@@ -800,7 +870,8 @@ function startRoundRobin(room) {
     chooserName: chooser ? chooser.name : "Unknown",
     round: nextRoundNumber,
     totalRounds: room.config.totalRounds,
-    standings: getChoosingStandings(room)
+    standings: getChoosingStandings(room),
+    pickSeconds: CHOOSER_PICK_SECONDS
   });
 
   const chooserSocket = io.sockets.sockets.get(chooserId);
@@ -809,11 +880,16 @@ function startRoundRobin(room) {
       round: nextRoundNumber,
       totalRounds: room.config.totalRounds
     });
+    // Only arm the auto-pass clock when there's another player to hand off to,
+    // and not while the all-idle safeguard is holding the timer off.
+    if (!opts.noTimer && room.playerOrder.length > 1) {
+      startChooserTimer(room);
+    }
   } else {
-    // Chooser disconnected — skip them
+    // Chooser disconnected — skip them (kept in the order for reconnect).
     room.waitingForWord = false;
     room.chooserIndex = (room.chooserIndex + 1) % room.playerOrder.length;
-    startRoundRobin(room);
+    assignChooser(room, opts);
   }
 }
 
@@ -1013,10 +1089,12 @@ function deserializeRoom(obj) {
     roundStartedAt: obj.roundStartedAt,
     timerInterval: null,
     countdownInterval: null,
+    chooserInterval: null,
     hostGraceTimer: null,
     players: new Map(),
     playerOrder: obj.playerOrder || [],
     chooserIndex: obj.chooserIndex || 0,
+    chooserSkips: 0,
     currentChooserId: obj.currentChooserId || null,
     waitingForWord: Boolean(obj.waitingForWord),
     config: obj.config || { roundTime: 180, totalRounds: 0 },
@@ -1051,9 +1129,14 @@ function resumeRoomAfterRestore(room) {
         if (rooms.has(room.code) && room.status === "round-ended") startRoundRobin(room);
       }, ROUND_REVEAL_DELAY);
     }
+  } else if (room.status === "choosing" && room.waitingForWord) {
+    // The auto-pass clock was lost in the restart — re-arm it (with a fresh full
+    // window) so a mid-pick room can't stall after a restore.
+    room.chooserSkips = 0;
+    const queueLen = room.playerOrder.filter(id => room.players.has(id)).length;
+    if (queueLen > 1) startChooserTimer(room);
   }
-  // "lobby" / "choosing" / "session-ended" need no re-arming: choosing resumes when
-  // the chooser submits a word; the others are static until a player/host acts.
+  // "lobby" / "session-ended" need no re-arming — they're static until a player/host acts.
 }
 
 async function persistState() {
@@ -1146,10 +1229,12 @@ io.on("connection", (socket) => {
       roundStartedAt: null,
       timerInterval: null,
       countdownInterval: null,
+      chooserInterval: null,
       players: new Map(),
       // Round-robin state
       playerOrder: [],
       chooserIndex: 0,
+      chooserSkips: 0,
       currentChooserId: null,
       waitingForWord: false,
       config: {
@@ -1250,11 +1335,17 @@ io.on("connection", (socket) => {
     if (![60, 120, 180, 300].includes(roundTime)) {
       return callback?.({ ok: false, error: "Invalid round timer." });
     }
+
+    // Need at least 2 players: one picks the word, the other(s) guess it. A
+    // solo host has no one to play against, so don't let the game start.
+    const activePlayers = Array.from(room.players.values())
+      .filter(p => p.active && p.connected);
+    if (activePlayers.length < 2) {
+      return callback?.({ ok: false, error: "You need at least 2 players to start — invite someone with the room code." });
+    }
     room.config.roundTime = roundTime;
 
     // Lock in total rounds = 2 x active player count (min 2)
-    const activePlayers = Array.from(room.players.values())
-      .filter(p => p.active && p.connected);
     room.config.totalRounds = Math.max(2, activePlayers.length * 2);
 
     startRoundRobin(room);
@@ -1288,6 +1379,25 @@ io.on("connection", (socket) => {
 
     room.waitingForWord = false;
     startGameRound(room, { word, hint, definition: lookup.definition || "" });
+    callback?.({ ok: true });
+  });
+
+  // The current chooser is busy and hands their pick to the next player in the
+  // queue. Same effect as running out of time, but on demand.
+  socket.on("game:passTurn", (payload = {}, callback) => {
+    const room = getRoomForSocket(socket);
+    if (!room) return callback?.({ ok: false, error: "Not in a room." });
+    if (room.status !== "choosing" || !room.waitingForWord) {
+      return callback?.({ ok: false, error: "There's no pick to pass right now." });
+    }
+    if (socket.id !== room.currentChooserId) {
+      return callback?.({ ok: false, error: "Only the current picker can pass the turn." });
+    }
+    if (room.playerOrder.filter(id => room.players.has(id)).length <= 1) {
+      return callback?.({ ok: false, error: "There's no one else to pass to." });
+    }
+    const me = room.players.get(socket.id);
+    passChooserTurn(room, me ? me.name : "The picker", "voluntary");
     callback?.({ ok: true });
   });
 
