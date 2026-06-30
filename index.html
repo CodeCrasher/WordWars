@@ -1705,6 +1705,25 @@
     }
     .chooser-header { text-align: center; margin-bottom: 24px; }
     .chooser-sub { color: var(--muted); font-size: 0.9rem; margin-top: 6px; }
+    .chooser-countdown {
+      display: inline-flex; align-items: center; gap: 6px;
+      margin-top: 12px;
+      font-size: 0.9rem; font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--muted);
+    }
+    .chooser-countdown::before { content: "⏳"; }
+    .chooser-countdown.countdown-low {
+      color: #ff6b6b;
+      animation: chooserPulse 1s ease-in-out infinite;
+    }
+    @keyframes chooserPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--muted);
+    }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--text, #fff); }
     .chooser-form {
       background: var(--panel); border-radius: 14px;
       border: 1px solid var(--line); padding: 24px;
@@ -2396,6 +2415,7 @@
               <p class="chooser-sub">
                 Pick a word. Everyone else guesses it. You watch.
               </p>
+              <div class="chooser-countdown hidden" id="chooserCountdown"></div>
             </div>
             <div class="chooser-form">
               <div class="field">
@@ -2415,6 +2435,9 @@
               <button id="chooserSubmitBtn" class="btn primary" disabled>
                 Set Word &amp; Start Round
               </button>
+              <button id="chooserPassBtn" class="btn btn-ghost hidden" type="button">
+                I'm busy — pass to next player
+              </button>
             </div>
           </div>
 
@@ -2427,6 +2450,7 @@
                 <span></span><span></span><span></span>
               </div>
               <p id="chooserWaitRound" class="chooser-round-label">Round 1</p>
+              <div class="chooser-countdown hidden" id="chooserWaitCountdown"></div>
             </div>
             <div class="wait-standings-wrap">
               <p class="wait-standings-title">Standings</p>
@@ -4059,6 +4083,9 @@
       showScreen("chooser");
       const isChooser = chooserId === state.playerId;
       const label = `Round ${round} of ${totalRounds}`;
+      // Others exist to hand off to → the pass option (and the auto-pass clock)
+      // are meaningful only then. A solo picker has no one to pass to.
+      const hasOthers = Array.isArray(standings) && standings.length > 1;
       if (isChooser) {
         $("chooserPickPanel").classList.remove("hidden");
         $("chooserWaitPanel").classList.add("hidden");
@@ -4069,6 +4096,10 @@
         $("chooserHint").value = "";
         $("chooserError").classList.add("hidden");
         $("chooserSubmitBtn").disabled = true;
+        const passBtn = $("chooserPassBtn");
+        passBtn.disabled = false;
+        passBtn.classList.toggle("hidden", !hasOthers);
+        resetChooserCountdown();
       } else {
         $("chooserPickPanel").classList.add("hidden");
         $("chooserWaitPanel").classList.remove("hidden");
@@ -4076,7 +4107,20 @@
         $("chooserWaitRound").textContent = label;
         $("chooserWaitAvatar").textContent = (chooserName || "?").charAt(0).toUpperCase();
         renderWaitStandings(standings);
+        resetChooserCountdown();
       }
+    }
+
+    // The pick countdown stays hidden until the first server tick arrives, so it
+    // never flashes a stale value when a fresh choosing screen opens.
+    function resetChooserCountdown() {
+      ["chooserCountdown", "chooserWaitCountdown"].forEach((id) => {
+        const el = $(id);
+        if (!el) return;
+        el.textContent = "";
+        el.classList.add("hidden");
+        el.classList.remove("countdown-low");
+      });
     }
 
     // Phase 1: live standings on the "X is choosing the word…" wait screen so
@@ -4175,6 +4219,43 @@
 
     // ── game:requestWord (sent only to chooser — no extra action needed) ──
     socket.on("game:requestWord", () => {});
+
+    // ── Pick countdown — server-authoritative auto-pass clock ─────
+    socket.on("game:chooserTick", ({ remaining }) => {
+      const secs = Math.max(0, remaining | 0);
+      const m = Math.floor(secs / 60);
+      const ss = String(secs % 60).padStart(2, "0");
+      const txt = `${m}:${ss} to pick`;
+      const low = secs <= 30;
+      ["chooserCountdown", "chooserWaitCountdown"].forEach((id) => {
+        const el = $(id);
+        if (!el) return;
+        el.textContent = txt;
+        el.classList.remove("hidden");
+        el.classList.toggle("countdown-low", low);
+      });
+    });
+
+    // ── A chooser ran out of time or handed off — the turn moved on ──
+    socket.on("game:chooserPassed", ({ skippedName, reason }) => {
+      const who = skippedName || "The picker";
+      showToast(reason === "voluntary"
+        ? `${who} passed the pick to the next player.`
+        : `${who} ran out of time — the pick moves to the next player.`);
+    });
+
+    // ── Chooser hands the turn off because they're busy ───────────
+    $("chooserPassBtn").addEventListener("click", () => {
+      const btn = $("chooserPassBtn");
+      btn.disabled = true;
+      socket.emit("game:passTurn", {}, res => {
+        if (!res || !res.ok) {
+          btn.disabled = false;
+          if (res && res.error) showToast(res.error);
+        }
+        // On success the server reassigns and everyone gets game:choosingWord.
+      });
+    });
 
     // ── Chooser word input → enable submit ───────────────────────
     $("chooserWord").addEventListener("input", () => {
