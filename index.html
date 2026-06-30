@@ -924,6 +924,16 @@
       opacity: 0.7;
     }
 
+    /* Prominent dismiss control for the solve / round-end modals. These modals no
+       longer dismiss on a stray background tap — the player must click this. */
+    .solve-continue {
+      width: 100%;
+      margin-top: 18px;
+      font-size: 1rem;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
     .appreciation-word {
       font-size: 0.95rem;
       color: var(--muted);
@@ -2605,6 +2615,7 @@
       <p id="solvePun" class="solve-pun"></p>
       <p id="solveStats" class="solve-stats"></p>
       <p id="solveCount" class="solve-stats"></p>
+      <button id="solveContinueBtn" class="btn primary solve-continue" type="button">Continue →</button>
     </div>
   </div>
 
@@ -2615,7 +2626,7 @@
       <div class="appreciation-word">The word was <span id="appreciationWord">?????</span></div>
       <p id="appreciationMeaning" class="appreciation-meaning hidden"></p>
       <p id="appreciationPun" class="solve-pun"></p>
-      <p id="appreciationTap" class="solve-stats">Tap to see the leaderboard</p>
+      <button id="appreciationContinueBtn" class="btn primary solve-continue" type="button">See leaderboard →</button>
     </div>
   </div>
 
@@ -2823,23 +2834,23 @@
         $("solveEmoji").textContent = guessesUsed <= 2 ? "🔥" : guessesUsed <= 4 ? "🎉" : "😅";
         $("solveHeading").textContent = SOLVE_HEADINGS[guessesUsed] || "Got it!";
         $("solvePun").textContent = pickRandom(SOLVE_PUNS[guessesUsed] || SOLVE_PUNS[6]);
-        $("solveStats").textContent = `Solved in ${guessesUsed} guess${guessesUsed === 1 ? "" : "es"} — tap to continue`;
+        $("solveStats").textContent = `Solved in ${guessesUsed} guess${guessesUsed === 1 ? "" : "es"}.`;
       } else {
         $("solveEmoji").textContent = "😬";
         $("solveHeading").textContent = "Better luck next round!";
         $("solvePun").textContent = pickRandom(FAIL_PUNS);
-        $("solveStats").textContent = "Tap to continue";
+        $("solveStats").textContent = "You're out of guesses for this round.";
       }
       overlay.classList.remove("hidden");
       if (solved) burstConfetti();
-      let gone = false;
-      const dismiss = () => {
-        if (gone) return;
-        gone = true;
+      // Dismiss ONLY via the button — a stray tap on the backdrop must not close
+      // the modal (especially on the out-of-guesses screen). onclick replaces any
+      // handler from a previous round, so it never stacks.
+      $("solveContinueBtn").onclick = () => {
         overlay.classList.add("hidden");
+        $("solveContinueBtn").onclick = null;
         then();
       };
-      overlay.addEventListener("click", dismiss, { once: true });
     }
 
     // Confetti burst on solve — brand colors, honors reduced motion.
@@ -2971,18 +2982,16 @@
       }
 
       overlay.classList.remove("hidden");
-      let gone = false;
-      const dismiss = () => {
-        if (gone) return;
-        gone = true;
-        overlay.removeEventListener("click", dismiss);
+      // Persistent until the player clicks the button — no auto-dismiss and no
+      // background-tap dismiss. The chosen word (and its meaning) stays on screen
+      // as long as the player wants to study it; the leaderboard underneath is
+      // revealed only when they click "See leaderboard →". onclick replaces any
+      // handler left from a previous round.
+      $("appreciationContinueBtn").onclick = () => {
         overlay.classList.add("hidden");
+        $("appreciationContinueBtn").onclick = null;
         if (then) then();
       };
-      // Persistent until the player taps — no auto-dismiss. The chosen word (and
-      // its meaning) stays on screen as long as the player wants to study it; the
-      // leaderboard underneath is revealed only when they tap to continue.
-      overlay.addEventListener("click", dismiss);
     }
 
     function escapeHtml(value) {
@@ -3103,7 +3112,7 @@
         }
       });
       $("adminForm").addEventListener("submit", startFromAdmin);
-      $("nextRoundBtn").addEventListener("click", nextRound);
+      $("nextRoundBtn").addEventListener("click", continueFromLeaderboard);
       $("endRoundBtn").addEventListener("click", endRound);
       $("playAgainBtn").addEventListener("click", () => showScreen("home"));
       $("newSessionBtn").addEventListener("click", () => window.location.reload());
@@ -3442,16 +3451,6 @@
     function endRound() {
       socket.emit("game:endRound", {}, (response) => {
         if (!response?.ok) showToast(response?.error || "Could not end round.");
-      });
-    }
-
-    function nextRound() {
-      $("nextRoundCta").classList.add("hidden");
-      socket.emit("game:start", { roundTime: state.room?.roundTime || state.game.roundTime }, (response) => {
-        if (!response?.ok) {
-          showToast(response?.error || "Could not start next round.");
-          $("nextRoundCta").classList.remove("hidden");
-        }
       });
     }
 
@@ -3868,21 +3867,27 @@
 
       // The leaderboard now persists. Reset the handoff state and show a
       // tap-to-continue prompt (suppressed on the final round, which auto-rolls
-      // into the final scoreboard). The legacy host-only "Next Round" button is
-      // retired — tapping anywhere on the board advances for everyone.
+      // into the final scoreboard). Advancing now requires clicking the explicit
+      // "Continue →" button — a stray tap anywhere on the board no longer skips it.
       state.pendingChoosing = null;
       state.leaderboardTapped = false;
       state.isFinalRound = payload.round >= payload.totalRounds;
-      $("nextRoundCta").classList.add("hidden");
-      $("nextRoundNote").textContent = state.isFinalRound
-        ? "Final scores coming up…"
-        : "Tap anywhere to continue →";
+      if (state.isFinalRound) {
+        $("nextRoundCta").classList.add("hidden");
+        $("nextRoundNote").textContent = "Final scores coming up…";
+      } else {
+        $("nextRoundNote").textContent = "Done studying the scores?";
+        $("nextRoundBtn").textContent = "Continue →";
+        $("nextRoundBtn").disabled = false;
+        $("nextRoundCta").classList.remove("hidden");
+      }
       showScreen("roundEnd");
     }
 
-    // Leave the round-end leaderboard when the player taps. If the next chooser
-    // has already been announced, go straight to the choosing screen; otherwise
-    // remember the tap so we advance the instant it is. No-op on the final round.
+    // Leave the round-end leaderboard when the player clicks "Continue". If the
+    // next chooser has already been announced, go straight to the choosing screen;
+    // otherwise remember the click so we advance the instant it is. The board no
+    // longer advances on a background tap. No-op on the final round.
     function continueFromLeaderboard() {
       if (state.screen !== "roundEnd" || state.isFinalRound) return;
       if (state.pendingChoosing) {
@@ -3892,10 +3897,10 @@
         enterChoosingScreen(next);
       } else if (!state.leaderboardTapped) {
         state.leaderboardTapped = true;
+        $("nextRoundBtn").disabled = true;
         $("nextRoundNote").textContent = "Getting the next round ready…";
       }
     }
-    $("roundEndScreen").addEventListener("click", continueFromLeaderboard);
 
     function renderSessionEnd(payload) {
       $("sessionEndSubtitle").textContent = payload.reason === "not-enough-players"
