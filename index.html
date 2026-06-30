@@ -3412,6 +3412,17 @@
       document.querySelectorAll("[data-kick]").forEach((button) => {
         button.addEventListener("click", () => kickPlayer(button.dataset.kick));
       });
+
+      // Need at least 2 players to start — one picks the word, the rest guess.
+      // Keep the host's Start button disabled (with a hint) until someone joins.
+      if (state.isHost) {
+        const ready = state.room.players.filter((p) => p.active !== false && p.connected !== false).length;
+        const canStart = ready >= 2;
+        const startBtn = $("startGameBtn");
+        startBtn.disabled = !canStart;
+        startBtn.textContent = canStart ? "Start Game" : "Waiting for players…";
+        setError("adminError", canStart ? "" : "You need at least 2 players to start — share the room code to invite someone.");
+      }
     }
 
     function kickPlayer(playerId) {

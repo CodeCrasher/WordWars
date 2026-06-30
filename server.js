@@ -1335,11 +1335,17 @@ io.on("connection", (socket) => {
     if (![60, 120, 180, 300].includes(roundTime)) {
       return callback?.({ ok: false, error: "Invalid round timer." });
     }
+
+    // Need at least 2 players: one picks the word, the other(s) guess it. A
+    // solo host has no one to play against, so don't let the game start.
+    const activePlayers = Array.from(room.players.values())
+      .filter(p => p.active && p.connected);
+    if (activePlayers.length < 2) {
+      return callback?.({ ok: false, error: "You need at least 2 players to start — invite someone with the room code." });
+    }
     room.config.roundTime = roundTime;
 
     // Lock in total rounds = 2 x active player count (min 2)
-    const activePlayers = Array.from(room.players.values())
-      .filter(p => p.active && p.connected);
     room.config.totalRounds = Math.max(2, activePlayers.length * 2);
 
     startRoundRobin(room);
