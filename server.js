@@ -1663,9 +1663,9 @@ const FALLBACK_WORDS = {
     { word: "HORSE", hint: "A cowboy's four-legged ride" },
     { word: "PHONE", hint: "It rings in your pocket" },
     { word: "STORM", hint: "Thunder announces its arrival" },
-    { word: "MOON", hint: "It lights the sky after sunset" },
-    { word: "BOOK", hint: "You turn its pages one by one" },
-    { word: "TREE", hint: "Squirrels climb it; birds nest in it" }
+    { word: "NIGHT", hint: "The moon lights the sky during it" },
+    { word: "STORY", hint: "You turn a book's pages to follow it" },
+    { word: "GRASS", hint: "Green blades you mow in summer" }
   ],
   medium: [
     { word: "FLAIR", hint: "A natural, stylish talent" },
@@ -1679,41 +1679,43 @@ const FALLBACK_WORDS = {
     { word: "VAULT", hint: "A bank keeps riches behind its heavy door" },
     { word: "THORN", hint: "A rose defends itself with this" },
     { word: "PLUME", hint: "A feather rising in smoke or on a hat" },
-    { word: "GRAVEL", hint: "Crunchy stones on a country driveway" },
+    { word: "STEED", hint: "A spirited horse fit for a knight" },
     { word: "FROST", hint: "It etches patterns on winter windows" },
     { word: "WAGER", hint: "Money placed on an outcome" },
     { word: "NUDGE", hint: "A gentle push to get someone moving" },
-    { word: "CANYON", hint: "A deep gorge carved by a river" },
-    { word: "HARBOR", hint: "Where ships rest from the open sea" },
-    { word: "MEADOW", hint: "An open field of wildflowers and grass" },
+    { word: "BRINE", hint: "Salty water for pickling" },
+    { word: "KNACK", hint: "A clever talent for doing something" },
+    { word: "GLEAM", hint: "A brief flash of reflected light" },
     { word: "BRISK", hint: "A quick, lively pace on a cold walk" },
     { word: "CRISP", hint: "How fresh autumn air or a good chip feels" }
   ],
   hard: [
-    { word: "CIPHER", hint: "A secret code waiting to be cracked" },
-    { word: "ZENITH", hint: "The highest point of the sky or of success" },
-    { word: "WALRUS", hint: "A tusked giant lounging on Arctic ice" },
-    { word: "QUIVER", hint: "It trembles, or holds an archer's arrows" },
-    { word: "GAMBIT", hint: "An opening sacrifice in chess" },
-    { word: "MIRAGE", hint: "A thirsty traveler's deceptive vision" },
-    { word: "NEBULA", hint: "A glowing cloud where stars are born" },
-    { word: "PARADOX", hint: "A statement that contradicts itself" },
-    { word: "LACQUER", hint: "A glossy coat brushed onto wood" },
-    { word: "OBELISK", hint: "A tall stone monument tapering to a point" },
-    { word: "SPHINX", hint: "A riddling guardian of ancient Egypt" },
-    { word: "TEMPEST", hint: "A violent storm Shakespeare named a play for" },
-    { word: "JUNIPER", hint: "A berry that flavors gin" },
-    { word: "QUARTZ", hint: "A hard crystal ticking inside many watches" },
-    { word: "VERTIGO", hint: "A dizzying fear felt at great heights" },
-    { word: "ECLIPSE", hint: "When one heavenly body hides another" },
-    { word: "LANTERN", hint: "A portable flame that lights the path" },
-    { word: "MAESTRO", hint: "The baton-waver before an orchestra" },
-    { word: "PHANTOM", hint: "A ghost said to haunt an opera" },
-    { word: "TRELLIS", hint: "A lattice that climbing roses scale" }
+    { word: "GLYPH", hint: "A carved symbol on ancient stone" },
+    { word: "NADIR", hint: "The lowest point of one's fortunes" },
+    { word: "QUALM", hint: "A sudden pang of doubt or unease" },
+    { word: "FJORD", hint: "A narrow sea inlet between steep cliffs" },
+    { word: "AXIOM", hint: "A truth accepted without proof" },
+    { word: "DIRGE", hint: "A slow, mournful funeral song" },
+    { word: "KNELL", hint: "The solemn toll of a funeral bell" },
+    { word: "CRYPT", hint: "A stone chamber beneath a church" },
+    { word: "HAVOC", hint: "Widespread destruction and chaos" },
+    { word: "QUELL", hint: "To put down a rebellion or a fear" },
+    { word: "HELIX", hint: "A spiral like a strand of DNA" },
+    { word: "NYMPH", hint: "A minor nature spirit of old myth" },
+    { word: "UMBRA", hint: "The darkest core of a shadow" },
+    { word: "WALTZ", hint: "A sweeping three-step ballroom dance" },
+    { word: "XENON", hint: "A rare gas glowing in bright lamps" },
+    { word: "EPOCH", hint: "A notable stretch of history" },
+    { word: "GAUNT", hint: "Thin and hollow from hardship" },
+    { word: "VIXEN", hint: "A female fox, or a fierce woman" },
+    { word: "TOPAZ", hint: "A golden-yellow gemstone" },
+    { word: "JOUST", hint: "A duel of mounted, lance-bearing knights" }
   ]
 };
 
-const PRACTICE_LENGTH_RANGE = { easy: [4, 5], medium: [5, 6], hard: [6, 7] };
+// Practice words are always exactly 5 letters (matching the real game). Difficulty
+// varies by word rarity/obscurity, NOT by length.
+const PRACTICE_LENGTH_RANGE = { easy: [5, 5], medium: [5, 5], hard: [5, 5] };
 
 const practiceSessions = new Map();
 
@@ -1791,10 +1793,11 @@ function wordUserPrompt(difficulty, avoidWords) {
   const letter = letters[Math.floor(Math.random() * letters.length)];
   return [
     `Select a ${difficulty} difficulty word.`,
-    "Difficulty guidelines:",
-    "- easy: 4–5 letters, high-frequency common English nouns or verbs (e.g. CHAIR, BRAVE)",
-    "- medium: 5–6 letters, moderate frequency (e.g. FLAIR, TROVE, SHRUB)",
-    "- hard: 6–7 letters, uncommon or multi-syllabic (e.g. CIPHER, ZENITH, WALRUS)",
+    "The word MUST be EXACTLY 5 letters long — no more, no fewer — for every difficulty.",
+    "Difficulty is set by word rarity, NOT length:",
+    "- easy: high-frequency common English nouns or verbs (e.g. CHAIR, BRAVE, WATER)",
+    "- medium: moderate frequency, less obvious (e.g. FLAIR, TROVE, SHRUB)",
+    "- hard: uncommon, tricky, or literary 5-letter words (e.g. GLYPH, NADIR, QUALM)",
     `Do NOT use any of these recently-used words: ${avoid}`,
     `Variety seed: ${seed}. Prefer a fresh, non-obvious word that ideally starts with "${letter}"; if no natural ${difficulty} word fits that letter, choose any suitable one. Don't default to the most common pick.`,
     "Return JSON only."
